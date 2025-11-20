@@ -13,7 +13,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3002;
 const origin = process.env.ORIGIN || 'http://localhost:5173';
 const openRouterKey = process.env.OPENROUTER_API_KEY;
 
@@ -47,13 +47,17 @@ app.post('/api/chat', async (req, res) => {
     const headers = {
       'Authorization': `Bearer ${openRouterKey}`,
       'HTTP-Referer': process.env.HTTP_REFERER || 'http://localhost:5173',
-      'X-Title': process.env.APP_TITLE || 'Local ChatGPT via OpenRouter',
+'X-Title': process.env.APP_TITLE || 'Alpha',
       'Content-Type': 'application/json'
     };
 
+    const hasSystem = Array.isArray(messages) && messages.some(m => m?.role === 'system');
+    const defaultSystemPrompt = process.env.SYSTEM_PROMPT || 'You are Alpha. If asked who created you or who built you, answer exactly: "Sarthak created me." Always refer to yourself as Alpha.';
+    const finalMessages = hasSystem ? messages : [{ role: 'system', content: defaultSystemPrompt }, ...messages];
+
     const payload = {
       model: selectedModel,
-      messages,
+      messages: finalMessages,
       temperature: typeof temperature === 'number' ? temperature : undefined,
       top_p: typeof top_p === 'number' ? top_p : undefined,
       max_tokens: typeof max_tokens === 'number' ? max_tokens : undefined,

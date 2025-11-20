@@ -44,6 +44,9 @@ export default function App() {
   })
 
   const containerRef = useRef(null)
+  const inputRef = useRef(null)
+  const abortRef = useRef(null)
+  const [healthy, setHealthy] = useState(null) // null=unknown, true/false
 
   useEffect(() => {
     saveHistory(messages)
@@ -57,28 +60,74 @@ export default function App() {
     containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
 
+  useEffect(() => {
+    // initial health check and periodic ping
+    let mounted = true
+    async function ping() {
+      try {
+        const r = await fetch('/health', { cache: 'no-store' })
+        if (!mounted) return
+        setHealthy(r.ok)
+      } catch {
+        if (!mounted) return
+        setHealthy(false)
+      }
+    }
+    ping()
+    const t = setInterval(ping, 15000)
+    return () => { mounted = false; clearInterval(t) }
+  }, [])
+
+  useEffect(() => {
+    // autoresize input
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px'
+    }
+  }, [input])
+
   const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading])
 
   async function sendMessage() {
     if (!canSend) return
     setError('')
-    const userMsg = { role: 'user', content: input.trim() }
+    const userMsg = { role: 'user', content: input.trim(), time: Date.now() }
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setLoading(true)
+
+    // allow cancel
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       const res = await axios.post('/api/chat', {
         messages: [...messages, userMsg],
         temperature: settings.temperature,
-      })
-      const aiMsg = { role: 'assistant', content: res.data?.content || 'No response' }
+      }, { signal: controller.signal })
+      const aiMsg = { role: 'assistant', content: res.data?.content || 'No response', time: Date.now() }
       setMessages(prev => [...prev, aiMsg])
     } catch (e) {
-      const msg = e?.response?.data?.error || e?.message || 'Request failed'
-      setError(msg)
+      if (axios.isCancel?.(e)) {
+        setError('Request cancelled')
+      } else {
+        const msg = e?.response?.data?.error || e?.message || 'Request failed'
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }
+  }
+
+  function regenerateLast() {
+    // resend the last user message
+    const lastUserIndex = [...messages].map(m=>m.role).lastIndexOf('user')
+    if (lastUserIndex === -1) return
+    const base = messages.slice(0, lastUserIndex)
+    const lastUser = messages[lastUserIndex]
+    setMessages(base) // drop any assistant after that
+    setInput(lastUser.content)
   }
 
   function onKeyDown(e) {
@@ -91,6 +140,16 @@ export default function App() {
   function clearHistory() {
     setMessages([])
     setError('')
+  }
+
+  function newChat() {
+    setMessages([])
+    setInput('')
+    setError('')
+  }
+
+  function stopRequest() {
+    try { abortRef.current?.abort() } catch {}
   }
 
   return (
@@ -133,10 +192,16 @@ export default function App() {
               <button className="md:hidden rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm" onClick={()=> setShowSettings(s=>!s)}>Settings</button>
               <h1 className="text-lg md:text-xl font-semibold tracking-tight flex items-center gap-2">
                 Alpha
-                <span className="inline-block w-2 h-2 rounded-full bg-amber-600"/>
+                <span className={"inline-block w-2 h-2 rounded-full " + (healthy === false ? 'bg-rose-500' : healthy === true ? 'bg-amber-600' : 'bg-sand-400')}/>
               </h1>
             </div>
-            <div className="text-xs text-stone-500 hidden md:block">Local storage only</div>
+            <div className="flex items-center gap-2">
+              {loading ? (
+                <button onClick={stopRequest} className="rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm">Stop</button>
+              ) : (
+                <button onClick={newChat} className="rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm">New chat</button>
+              )}
+            </div>
           </header>
 
           <main className="flex-1 overflow-hidden">
@@ -145,8 +210,13 @@ export default function App() {
                 <div className="text-center text-stone-500 mt-12">Start by asking a question…</div>
               )}
               {messages.map((m, idx) => (
-                <MessageBubble key={idx} role={m.role} content={m.content} />
+                <MessageBubble key={idx} role={m.role} content={m.content} time={m.time} />
               ))}
+              {!loading && messages.length > 0 && messages[messages.length-1]?.role === 'assistant' && (
+                <div className="flex justify-center">
+                  <button onClick={regenerateLast} className="text-xs rounded-xl border px-3 py-1.5 bg-sand-100/80 border-sand-500/30 shadow-sm">Regenerate response</button>
+                </div>
+              )}
               {loading && (
                 <div className="flex justify-start">
                   <div className="bg-sand-50 border border-sand-500/30 text-stone-900 max-w-[85%] rounded-2xl px-4 py-3 shadow-soft">
@@ -171,6 +241,7 @@ export default function App() {
           <footer className="border-t bg-sand-100/80 backdrop-blur p-3 sticky bottom-0 safe-area-bottom border-sand-500/30">
             <div className="flex items-end gap-2">
               <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e)=> setInput(e.target.value)}
                 onKeyDown={onKeyDown}
@@ -192,7 +263,7 @@ export default function App() {
   )
 }
 
-function MessageBubble({ role, content }) {
+function MessageBubble({ role, content, time }) {
   const isUser = role === 'user'
   async function copyText() {
     try {
@@ -219,6 +290,9 @@ function MessageBubble({ role, content }) {
           {!isUser && (
             <button onClick={copyText} className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 -right-2 text-xs bg-stone-800 text-white rounded px-2 py-1">Copy</button>
           )}
+          <div className={(isUser ? 'text-white/60' : 'text-stone-400') + ' text-[10px] mt-1 select-none'}>
+            {time ? new Date(time).toLocaleTimeString() : ''}
+          </div>
         </div>
         {isUser && (
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-800 text-white shrink-0">U</div>
