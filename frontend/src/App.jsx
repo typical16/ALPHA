@@ -3,6 +3,10 @@ import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+// Configure axios base URL for production
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : '');
+axios.defaults.baseURL = API_BASE_URL;
+
 const LOCAL_STORAGE_KEY = 'openrouter_chat_history_v1'
 const LOCAL_STORAGE_SETTINGS = 'openrouter_chat_settings_v1'
 
@@ -22,6 +26,44 @@ function saveHistory(history) {
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(history))
   } catch {}
+}
+
+function extractFollowUpSuggestions(content) {
+  if (!content || typeof content !== 'string') return []
+  const lines = content.split('\n')
+  const suggestions = []
+
+  const startIndex = lines.findIndex(line => {
+    const t = line.trim().toLowerCase()
+    return t === 'follow-up suggestions:' || t === 'follow-up suggestions' || t.startsWith('### follow-up suggestions')
+  })
+
+  if (startIndex === -1) return []
+
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+
+    // stop if we hit a new markdown heading after we've started collecting
+    if (line.startsWith('#') && !line.toLowerCase().startsWith('### follow-up suggestions')) {
+      if (suggestions.length > 0) break
+      continue
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/)
+    const numberedMatch = line.match(/^\d+\.\s+(.*)$/)
+    const text = (bulletMatch && bulletMatch[1]) || (numberedMatch && numberedMatch[1]) || null
+
+    if (text) {
+      suggestions.push(text.trim())
+      if (suggestions.length >= 5) break
+    } else if (suggestions.length > 0) {
+      // once we started reading the list, stop on the first non-list line
+      break
+    }
+  }
+
+  return suggestions
 }
 
 export default function App() {
@@ -88,6 +130,18 @@ export default function App() {
 
   const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading])
 
+  const lastAssistantMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === 'assistant' && typeof messages[i].content === 'string') return messages[i]
+    }
+    return null
+  }, [messages])
+
+  const followUpSuggestions = useMemo(
+    () => (lastAssistantMessage ? extractFollowUpSuggestions(lastAssistantMessage.content) : []),
+    [lastAssistantMessage]
+  )
+
   async function sendMessage() {
     if (!canSend) return
     setError('')
@@ -117,6 +171,15 @@ export default function App() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  function handleSuggestionClick(text) {
+    if (!text) return
+    setInput(text)
+    setError('')
+    if (inputRef.current) {
+      inputRef.current.focus()
     }
   }
 
@@ -213,8 +276,23 @@ export default function App() {
                 <MessageBubble key={idx} role={m.role} content={m.content} time={m.time} />
               ))}
               {!loading && messages.length > 0 && messages[messages.length-1]?.role === 'assistant' && (
-                <div className="flex justify-center">
-                  <button onClick={regenerateLast} className="text-xs rounded-xl border px-3 py-1.5 bg-sand-100/80 border-sand-500/30 shadow-sm">Regenerate response</button>
+                <div className="flex flex-col items-center md:items-start gap-2">
+                  <div className="flex justify-center w-full">
+                    <button onClick={regenerateLast} className="text-xs rounded-xl border px-3 py-1.5 bg-sand-100/80 border-sand-500/30 shadow-sm">Regenerate response</button>
+                  </div>
+                  {followUpSuggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-2 justify-center md:justify-start w-full">
+                      {followUpSuggestions.map((s, idx) => (
+                        <button
+                          key={idx}
+                          onClick={()=> handleSuggestionClick(s)}
+                          className="text-xs md:text-sm rounded-full border px-3 py-1.5 bg-sand-100/80 border-sand-500/30 shadow-sm hover:bg-sand-100"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {loading && (

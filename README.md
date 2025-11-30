@@ -69,9 +69,49 @@ npm run dev
 - You can change the model by sending `model` in the request from the frontend (defaults to `openai/gpt-4o-mini`).
 
 ## Deploying
-- Ensure `OPENROUTER_API_KEY` is set on the server.
-- Build frontend: `cd frontend && npm run build` and serve `dist/` statically.
-- Start backend: `cd backend && npm start`.
+
+### Option 1: One-Click Deploy to Vercel (Recommended)
+
+1. **Fork this repository** to your GitHub account
+2. **Get your OpenRouter API key** from https://openrouter.ai/keys
+3. **Deploy to Vercel:**
+   - Go to [vercel.com](https://vercel.com) and sign in with GitHub
+   - Click "New Project" and import your forked repository
+   - In Environment Variables, add:
+     - `OPENROUTER_API_KEY`: Your OpenRouter API key
+     - `ORIGIN`: Your Vercel domain (will be auto-generated)
+     - `HTTP_REFERER`: Your Vercel domain (will be auto-generated)
+   - Click "Deploy"
+   - Your app will be live at your Vercel URL!
+
+### Option 2: Manual Deployment
+
+1. **Set up environment variables** (copy from `env.example`):
+   ```
+   OPENROUTER_API_KEY=your_openrouter_api_key_here
+   ORIGIN=your_domain_here
+   HTTP_REFERER=your_domain_here
+   APP_TITLE=Alpha Chat App
+   NODE_ENV=production
+   ```
+
+2. **Install dependencies and build:**
+   ```bash
+   npm run install:all
+   npm run build
+   ```
+
+3. **Start the application:**
+   ```bash
+   npm start
+   ```
+
+### Environment Variables for Production
+- `OPENROUTER_API_KEY`: Your OpenRouter API key (required)
+- `ORIGIN`: Your frontend domain for CORS
+- `HTTP_REFERER`: Your app's URL for OpenRouter
+- `APP_TITLE`: Your app's title
+- `NODE_ENV`: Set to "production"
 
 ## License
 MIT
