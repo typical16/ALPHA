@@ -38,6 +38,15 @@ const corsOptions = {
 
 const openRouterKey = process.env.OPENROUTER_API_KEY;
 
+// Log whether the API key is present (do not print the key itself)
+if (openRouterKey) {
+  // eslint-disable-next-line no-console
+  console.log('[INFO] OPENROUTER_API_KEY is present');
+} else {
+  // eslint-disable-next-line no-console
+  console.warn('[WARN] OPENROUTER_API_KEY is NOT set');
+}
+
 if (!openRouterKey) {
   // eslint-disable-next-line no-console
   console.warn('\n[WARN] OPENROUTER_API_KEY is not set. Set it in environment variables.');
@@ -55,6 +64,15 @@ if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'openrouter-proxy', time: new Date().toISOString() });
+});
+
+// Lightweight debug endpoint (safe: does not return the API key)
+app.get('/_debug', (req, res) => {
+  res.json({
+    ok: true,
+    hasOpenRouterKey: !!openRouterKey,
+    allowedOrigins
+  });
 });
 
 app.get('/', (req, res) => {
