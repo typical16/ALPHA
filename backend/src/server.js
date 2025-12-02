@@ -210,6 +210,11 @@ app.post('/api/chat', async (req, res) => {
     const { statusCode, message } = buildClientErrorFromOpenRouter(err);
     // eslint-disable-next-line no-console
     console.error('[OpenRouter Error]', message, err?.response?.status || err?.code || '');
+    // Log response body from OpenRouter (safe: does not contain your API key)
+    if (err?.response?.data) {
+      // eslint-disable-next-line no-console
+      console.error('[OpenRouter Response Data]', JSON.stringify(err.response.data));
+    }
     return res.status(statusCode).json({ error: message });
   }
 });
