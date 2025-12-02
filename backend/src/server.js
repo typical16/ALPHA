@@ -15,6 +15,27 @@ const app = express();
 
 const port = process.env.PORT || 3001;
 const origin = process.env.ORIGIN || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173');
+
+// Allow multiple origins for CORS
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://alpha-tawny-two.vercel.app',
+  'https://alpha-pink-seven.vercel.app',
+  origin
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (requestOrigin, callback) => {
+    if (allowedOrigins.includes(requestOrigin) || !requestOrigin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: false
+};
+
 const openRouterKey = process.env.OPENROUTER_API_KEY;
 
 if (!openRouterKey) {
@@ -23,7 +44,7 @@ if (!openRouterKey) {
 }
 
 app.use(morgan('dev'));
-app.use(cors({ origin, credentials: false }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 
 // Serve static files from frontend/dist in production
