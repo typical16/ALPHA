@@ -107,7 +107,8 @@ export default function App() {
     let mounted = true
     async function ping() {
       try {
-        const r = await fetch('/health', { cache: 'no-store' })
+        const healthUrl = API_BASE_URL ? `${API_BASE_URL}/health` : '/health'
+        const r = await fetch(healthUrl, { cache: 'no-store' })
         if (!mounted) return
         setHealthy(r.ok)
       } catch {
