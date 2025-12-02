@@ -27,11 +27,21 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (requestOrigin, callback) => {
-    if (allowedOrigins.includes(requestOrigin) || !requestOrigin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Allow non-browser requests (no origin)
+    if (!requestOrigin) return callback(null, true);
+
+    // Exact allowed origins
+    if (allowedOrigins.includes(requestOrigin)) return callback(null, true);
+
+    // Allow any Vercel preview or production domain (ends with .vercel.app)
+    try {
+      const parsed = new URL(requestOrigin);
+      if (parsed.hostname && parsed.hostname.endsWith('.vercel.app')) return callback(null, true);
+    } catch (e) {
+      // ignore URL parse errors
     }
+
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: false
 };
