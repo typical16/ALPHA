@@ -1,117 +1,60 @@
-# ChatGPT-like App via OpenRouter
+ # Alpha — Chat app (OpenRouter proxy)
 
-A modern, responsive chat app using React + Vite + Tailwind on the frontend and Node.js/Express on the backend. The backend securely proxies requests to OpenRouter using an API key from environment variables. Chat history is stored entirely on the client via `localStorage`.
+Short, friendly summary for LinkedIn: Alpha is a modern, mobile-first chat UI built with React + Vite that proxies requests through a lightweight Node/Express backend to OpenRouter. It stores conversation history in the browser (no database) and is designed for easy local development and simple cloud deployment (Vercel + Render).
 
-## Features
-- Modern, mobile-friendly UI with TailwindCSS
-- Smooth scrollable chat with distinct user/AI bubbles
-- Message box fixed at the bottom; Enter to send, Shift+Enter for newline
-- Typing indicator while waiting for AI response
-- Persistent chat history via `localStorage` and a button to clear history
-- Graceful error messages on API failures
+Live demo: https://alpha-f9hm.onrender.com/ (backend) • Frontend: (your Vercel URL)
 
-## Tech Stack
-- Frontend: React 18, Vite, TailwindCSS
-- Backend: Node.js, Express, Axios
-- API Provider: OpenRouter (`https://openrouter.ai`)
+**Highlights**
+- Human-like conversation behavior via a configurable system prompt
+- Clean, responsive UI with TailwindCSS
+- Client-side chat history (no server DB) and lightweight proxying for API keys
+- Easy to run locally and deploy to Vercel (frontend) + Render (backend)
 
-## Project Structure
+**Tech**: React 18, Vite, TailwindCSS, Node.js, Express, Axios, OpenRouter
+
+Overview
 ```
 backend/   # Express server, /api/chat proxy to OpenRouter
 frontend/  # React + Vite + Tailwind app
 ```
 
-## Prerequisites
-- Node.js 18+
-- An OpenRouter API key (`https://openrouter.ai/keys`)
+Quick start (local)
 
-## Setup
-
-### 1) Backend
-```
+1) Backend
+```powershell
 cd backend
 copy .env.example .env   # Windows PowerShell/cmd
-# Edit .env and set OPENROUTER_API_KEY
+# Edit backend/.env and set OPENROUTER_API_KEY
 npm install
 npm run dev
 ```
-- The server listens on `http://localhost:3001` by default.
-- The `ORIGIN` in `.env` controls CORS (defaults to `http://localhost:5173`).
-- Health check: `GET http://localhost:3001/health`
 
-Environment variables (`backend/.env`):
-```
-OPENROUTER_API_KEY=YOUR_KEY_HERE
-HTTP_REFERER=http://localhost:5173
-APP_TITLE=Local ChatGPT via OpenRouter
-PORT=3001
-ORIGIN=http://localhost:5173
-```
-
-### 2) Frontend
-```
+2) Frontend
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
-- App runs at `http://localhost:5173`.
-- Vite dev server proxies `/api` and `/health` to the backend.
 
-## Usage
-1. Open the frontend in your browser.
-2. Type a message and press Enter to send (Shift+Enter for newline).
-3. Responses come back after the backend calls OpenRouter.
-4. Click "Clear" to remove chat history from local storage.
+Open your browser at `http://localhost:5173` to use the app.
 
-## Notes
-- All conversation data is kept in the browser; no external database is used.
-- The backend only forwards messages and returns the assistant’s text.
-- You can change the model by sending `model` in the request from the frontend (defaults to `openai/gpt-4o-mini`).
+What to configure
+- `backend/.env` — set `OPENROUTER_API_KEY`, `ORIGIN`, and `HTTP_REFERER`.
+- `frontend/.env.production` — set `VITE_API_BASE_URL` to your backend URL for production.
 
-## Deploying
+Deployment notes
+- Frontend: deploy `frontend` to Vercel (set `VITE_API_BASE_URL` in Vercel env vars if preferred).
+- Backend: deploy `backend` to Render (set `OPENROUTER_API_KEY`, `ORIGIN`, `HTTP_REFERER`).
 
-### Option 1: One-Click Deploy to Vercel (Recommended)
+Troubleshooting tips
+- If deployed responses sound different from local, check the `SYSTEM_PROMPT` environment variable on the backend — the prompt controls assistant tone/behavior.
+- If requests fail with CORS errors, ensure `ORIGIN` matches the frontend domain or allow your Vercel domain.
+- For OpenRouter 401/authorization errors, verify the API key is active and has access to the requested model.
 
-1. **Fork this repository** to your GitHub account
-2. **Get your OpenRouter API key** from https://openrouter.ai/keys
-3. **Deploy to Vercel:**
-   - Go to [vercel.com](https://vercel.com) and sign in with GitHub
-   - Click "New Project" and import your forked repository
-   - In Environment Variables, add:
-     - `OPENROUTER_API_KEY`: Your OpenRouter API key
-     - `ORIGIN`: Your Vercel domain (will be auto-generated)
-     - `HTTP_REFERER`: Your Vercel domain (will be auto-generated)
-   - Click "Deploy"
-   - Your app will be live at your Vercel URL!
+Share on LinkedIn
+- Short blurb you can copy:
 
-### Option 2: Manual Deployment
+"Launched Alpha — a modern, mobile-friendly chat UI that proxies to OpenRouter. Built with React + Vite on the frontend and Node/Express on the backend. Live demo + source code available. Feedback welcome! 🔗 [repo link]"
 
-1. **Set up environment variables** (copy from `env.example`):
-   ```
-   OPENROUTER_API_KEY=your_openrouter_api_key_here
-   ORIGIN=your_domain_here
-   HTTP_REFERER=your_domain_here
-   APP_TITLE=Alpha Chat App
-   NODE_ENV=production
-   ```
-
-2. **Install dependencies and build:**
-   ```bash
-   npm run install:all
-   npm run build
-   ```
-
-3. **Start the application:**
-   ```bash
-   npm start
-   ```
-
-### Environment Variables for Production
-- `OPENROUTER_API_KEY`: Your OpenRouter API key (required)
-- `ORIGIN`: Your frontend domain for CORS
-- `HTTP_REFERER`: Your app's URL for OpenRouter
-- `APP_TITLE`: Your app's title
-- `NODE_ENV`: Set to "production"
-
-## License
+License
 MIT
