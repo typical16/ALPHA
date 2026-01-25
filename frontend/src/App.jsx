@@ -552,7 +552,7 @@ export default function App() {
         </aside>
 
         {/* Main column */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0">
           <header className="px-4 h-16 border-b backdrop-blur flex items-center justify-between sticky top-0 z-10 bg-sand-100/80 border-sand-500/30">
             <div className="flex items-center gap-3">
               <button className="md:hidden rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm" onClick={()=> setShowSettings(s=>!s)}>Settings</button>
