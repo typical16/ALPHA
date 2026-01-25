@@ -2,34 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
-  width: 100%;
+html, body, #root {
   margin: 0;
   padding: 0;
-}
-
-#root {
   width: 100%;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
 }
 
-/* Mobile viewport optimization */
-@supports (height: 100dvh) {
-  #root {
-    min-height: 100dvh;
-  }
-}
-
-/* Base document styling */
 body {
   background: #F1EFE3; /* sand-100 */
   color: #1C1917; /* stone-900 */
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-touch-callout: none;
 }
 
 /* Smooth minimalist scrollbar */
