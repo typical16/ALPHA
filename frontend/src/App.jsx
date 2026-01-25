@@ -518,9 +518,9 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen text-stone-900 overflow-hidden flex flex-col">
+    <div className="min-h-screen w-full text-stone-900 flex flex-col">
       {showIntro && <AlphaIntro onClose={closeIntro} />}
-      <div className="w-full flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden">
+      <div className="w-full flex-1 flex flex-col md:flex-row min-w-0">
         {/* Sidebar */}
         <aside className={
           'backdrop-blur w-full md:w-80 md:flex-shrink-0 md:block border-r ' +
@@ -567,11 +567,7 @@ export default function App() {
               ) : (
                 <button onClick={newChat} className="rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm">New chat</button>
               )}
-            </div>
-          </header>
-
-          <main className="flex-1 overflow-y-auto min-w-0 overflow-x-hidden">
-            <div ref={containerRef} className="overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 md:space-y-5 nice-scrollbar">
+            </div>\n          </header>\n\n          <main className=\"flex-1 overflow-y-auto overflow-x-hidden min-w-0\">\n            <div ref={containerRef} className=\"overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 md:space-y-5 nice-scrollbar\">
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center px-4">
                   <div className="mb-6">
