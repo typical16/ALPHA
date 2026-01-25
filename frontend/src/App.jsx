@@ -518,20 +518,20 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-full text-stone-900 overflow-x-hidden">
+    <div className="h-screen w-screen text-stone-900 overflow-hidden flex flex-col">
       {showIntro && <AlphaIntro onClose={closeIntro} />}
-      <div className="mx-auto max-w-6xl h-screen flex flex-col md:flex-row min-w-0 overflow-x-hidden">
+      <div className="w-full flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden">
         {/* Sidebar */}
         <aside className={
           'backdrop-blur w-full md:w-80 md:flex-shrink-0 md:block border-r ' +
-          'bg-sand-100/80 border-sand-500/30 ' +
+          'bg-sand-100/80 border-sand-500/30 overflow-hidden flex flex-col ' +
           (showSettings ? 'block' : 'hidden md:block')
         }>
-          <div className="h-14 flex items-center justify-between px-4 border-b border-sand-500/30">
+          <div className="h-14 flex items-center justify-between px-4 border-b border-sand-500/30 flex-shrink-0">
             <div className="font-semibold">Settings</div>
             <button className="md:hidden text-stone-500" onClick={()=> setShowSettings(false)}>Close</button>
           </div>
-          <div className="p-4 space-y-5">
+          <div className="flex-1 overflow-y-auto p-4 space-y-5 nice-scrollbar">
             <div>
               <label className="text-xs font-medium text-stone-600">Temperature: {settings.temperature.toFixed(2)}</label>
               <input
@@ -552,7 +552,7 @@ export default function App() {
         </aside>
 
         {/* Main column */}
-        <div className="flex-1 h-screen flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <header className="px-4 h-16 border-b backdrop-blur flex items-center justify-between sticky top-0 z-10 bg-sand-100/80 border-sand-500/30">
             <div className="flex items-center gap-3">
               <button className="md:hidden rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm" onClick={()=> setShowSettings(s=>!s)}>Settings</button>
