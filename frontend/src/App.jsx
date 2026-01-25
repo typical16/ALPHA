@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import imageCompression from 'browser-image-compression'
 import 'katex/dist/katex.min.css'
 
 // Configure axios base URL for production
@@ -398,21 +399,31 @@ export default function App() {
       return
     }
     
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
-      setError('Image size must be less than 10MB')
-      return
+    setError('Compressing image...')
+    
+    // Compress the image
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true
     }
     
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const base64 = event.target.result
-      setAttachedImage(base64)
-      setError('')
-    }
-    reader.onerror = () => {
-      setError('Failed to read image file')
-    }
-    reader.readAsDataURL(file)
+    imageCompression(file, options)
+      .then((compressedFile) => {
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          const base64 = event.target.result
+          setAttachedImage(base64)
+          setError('')
+        }
+        reader.onerror = () => {
+          setError('Failed to read image file')
+        }
+        reader.readAsDataURL(compressedFile)
+      })
+      .catch((error) => {
+        setError('Failed to compress image: ' + error.message)
+      })
   }
 
   function removeAttachedImage() {
