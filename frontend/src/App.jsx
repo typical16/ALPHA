@@ -552,8 +552,8 @@ export default function App() {
         </aside>
 
         {/* Main column */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="px-4 h-16 border-b backdrop-blur flex items-center justify-between sticky top-0 z-10 bg-sand-100/80 border-sand-500/30">
+        <div className="flex-1 flex flex-col min-w-0 h-full">
+          <header className="px-4 h-16 border-b backdrop-blur flex items-center justify-between flex-shrink-0 z-10 bg-sand-100/80 border-sand-500/30">
             <div className="flex items-center gap-3">
               <button className="md:hidden rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm" onClick={()=> setShowSettings(s=>!s)}>Settings</button>
               <h1 className="text-lg md:text-xl font-bold tracking-tight flex items-center gap-2">
@@ -570,8 +570,8 @@ export default function App() {
             </div>
           </header>
 
-          <main className="flex-1 overflow-hidden min-w-0">
-            <div ref={containerRef} className="h-full overflow-y-auto overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 md:space-y-5 nice-scrollbar">
+          <main className="flex-1 overflow-y-auto min-w-0 overflow-x-hidden">
+            <div ref={containerRef} className="overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 md:space-y-5 nice-scrollbar">
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center px-4">
                   <div className="mb-6">
@@ -653,7 +653,7 @@ export default function App() {
             </div>
           </main>
 
-          <footer className="border-t bg-sand-100/80 backdrop-blur p-3 sticky bottom-0 safe-area-bottom border-sand-500/30">
+          <footer className="border-t bg-sand-100/80 backdrop-blur p-3 flex-shrink-0 safe-area-bottom border-sand-500/30">
             {attachedImage && (
               <div className="mb-2 relative inline-block">
                 <div className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-sage-500/50">
