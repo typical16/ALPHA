@@ -406,22 +406,31 @@ export default function App() {
     setCompressingImage(true)
     setError('Compressing image...')
     
-    // Compress the image - more aggressive compression to avoid 413 errors
+    // Compress the image - very aggressive for production/deployment
     const primaryOptions = {
-      maxSizeMB: 0.4,
-      maxWidthOrHeight: 1280,
+      maxSizeMB: 0.3,
+      maxWidthOrHeight: 1024,
       useWebWorker: true,
       fileType: 'image/jpeg',
-      initialQuality: 0.7
+      initialQuality: 0.6
     }
     
     // Fallback options if primary compression isn't enough
     const fallbackOptions = {
-      maxSizeMB: 0.2,
-      maxWidthOrHeight: 800,
+      maxSizeMB: 0.15,
+      maxWidthOrHeight: 640,
       useWebWorker: true,
       fileType: 'image/jpeg',
-      initialQuality: 0.5
+      initialQuality: 0.4
+    }
+    
+    // Ultra fallback for extreme cases
+    const ultraFallbackOptions = {
+      maxSizeMB: 0.08,
+      maxWidthOrHeight: 480,
+      useWebWorker: true,
+      fileType: 'image/jpeg',
+      initialQuality: 0.3
     }
     
     imageCompression(file, primaryOptions)
@@ -430,18 +439,51 @@ export default function App() {
         reader.onload = (event) => {
           const base64 = event.target.result
           // Check if base64 is still too large (rough estimate: 1.33x of file size)
-          if (base64.length > 1400000) {
+          if (base64.length > 1200000) {
             // Fallback: compress more aggressively
             setError('Recompressing image with higher compression...')
             imageCompression(file, fallbackOptions)
               .then((fallbackCompressed) => {
                 const fallbackReader = new FileReader()
                 fallbackReader.onload = (fallbackEvent) => {
-                  setAttachedImage(fallbackEvent.target.result)
-                  setError('')
-                  setCompressingImage(false)
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = ''
+                  const fallbackBase64 = fallbackEvent.target.result
+                  // Check if still too large, use ultra fallback
+                  if (fallbackBase64.length > 800000) {
+                    setError('Applying final compression...')
+                    imageCompression(file, ultraFallbackOptions)
+                      .then((ultraCompressed) => {
+                        const ultraReader = new FileReader()
+                        ultraReader.onload = (ultraEvent) => {
+                          setAttachedImage(ultraEvent.target.result)
+                          setError('')
+                          setCompressingImage(false)
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = ''
+                          }
+                        }
+                        ultraReader.onerror = () => {
+                          setError('Failed to read image file')
+                          setCompressingImage(false)
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = ''
+                          }
+                        }
+                        ultraReader.readAsDataURL(ultraCompressed)
+                      })
+                      .catch((error) => {
+                        setError('Failed to compress image: ' + error.message)
+                        setCompressingImage(false)
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = ''
+                        }
+                      })
+                  } else {
+                    setAttachedImage(fallbackBase64)
+                    setError('')
+                    setCompressingImage(false)
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = ''
+                    }
                   }
                 }
                 fallbackReader.onerror = () => {

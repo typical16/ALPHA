@@ -64,14 +64,26 @@ if (!openRouterKey) {
 
 app.use(morgan('dev'));
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ limit: '2mb' }));
+// Increase payload limits for image uploads
+app.use(express.json({ limit: '4mb' }));
+app.use(express.urlencoded({ limit: '4mb', parameterLimit: 50000 }));
 
 // Serve static files from frontend/dist in production
 if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
   app.use(express.static(frontendDistPath));
 }
+
+// Error handler for payload too large
+app.use((err, req, res, next) => {
+  if (err.status === 413 || err.message?.includes('too large')) {
+    return res.status(413).json({ 
+      error: 'Payload too large. Please compress the image more.',
+      details: err.message 
+    });
+  }
+  next(err);
+});
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'openrouter-proxy', time: new Date().toISOString() });
