@@ -313,6 +313,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [attachedImage, setAttachedImage] = useState(null) // base64 image data
+  const [compressingImage, setCompressingImage] = useState(false) // track image compression state
   const [showIntro, setShowIntro] = useState(() => {
     // Show intro only on first visit
     const hasSeenIntro = localStorage.getItem('alpha_has_seen_intro')
@@ -392,18 +393,22 @@ export default function App() {
 
   function handleImageSelect(e) {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || compressingImage) return
     
     if (!file.type.startsWith('image/')) {
       setError('Please select an image file')
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       return
     }
     
+    setCompressingImage(true)
     setError('Compressing image...')
     
     // Compress the image
     const options = {
-      maxSizeMB: 1,
+      maxSizeMB: 0.8,
       maxWidthOrHeight: 1920,
       useWebWorker: true
     }
@@ -415,19 +420,34 @@ export default function App() {
           const base64 = event.target.result
           setAttachedImage(base64)
           setError('')
+          setCompressingImage(false)
+          // Reset file input after successful compression
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
         }
         reader.onerror = () => {
           setError('Failed to read image file')
+          setCompressingImage(false)
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
         }
         reader.readAsDataURL(compressedFile)
       })
       .catch((error) => {
         setError('Failed to compress image: ' + error.message)
+        setCompressingImage(false)
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
       })
   }
 
   function removeAttachedImage() {
     setAttachedImage(null)
+    setCompressingImage(false)
+    setError('')
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -514,6 +534,7 @@ export default function App() {
     setInput('')
     setError('')
     setAttachedImage(null)
+    setCompressingImage(false)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
