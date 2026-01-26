@@ -406,24 +406,67 @@ export default function App() {
     setCompressingImage(true)
     setError('Compressing image...')
     
-    // Compress the image
-    const options = {
-      maxSizeMB: 0.8,
-      maxWidthOrHeight: 1920,
-      useWebWorker: true
+    // Compress the image - more aggressive compression to avoid 413 errors
+    const primaryOptions = {
+      maxSizeMB: 0.4,
+      maxWidthOrHeight: 1280,
+      useWebWorker: true,
+      fileType: 'image/jpeg',
+      initialQuality: 0.7
     }
     
-    imageCompression(file, options)
+    // Fallback options if primary compression isn't enough
+    const fallbackOptions = {
+      maxSizeMB: 0.2,
+      maxWidthOrHeight: 800,
+      useWebWorker: true,
+      fileType: 'image/jpeg',
+      initialQuality: 0.5
+    }
+    
+    imageCompression(file, primaryOptions)
       .then((compressedFile) => {
         const reader = new FileReader()
         reader.onload = (event) => {
           const base64 = event.target.result
-          setAttachedImage(base64)
-          setError('')
-          setCompressingImage(false)
-          // Reset file input after successful compression
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
+          // Check if base64 is still too large (rough estimate: 1.33x of file size)
+          if (base64.length > 1400000) {
+            // Fallback: compress more aggressively
+            setError('Recompressing image with higher compression...')
+            imageCompression(file, fallbackOptions)
+              .then((fallbackCompressed) => {
+                const fallbackReader = new FileReader()
+                fallbackReader.onload = (fallbackEvent) => {
+                  setAttachedImage(fallbackEvent.target.result)
+                  setError('')
+                  setCompressingImage(false)
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = ''
+                  }
+                }
+                fallbackReader.onerror = () => {
+                  setError('Failed to read image file')
+                  setCompressingImage(false)
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = ''
+                  }
+                }
+                fallbackReader.readAsDataURL(fallbackCompressed)
+              })
+              .catch((error) => {
+                setError('Failed to compress image: ' + error.message)
+                setCompressingImage(false)
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = ''
+                }
+              })
+          } else {
+            setAttachedImage(base64)
+            setError('')
+            setCompressingImage(false)
+            if (fileInputRef.current) {
+              fileInputRef.current.value = ''
+            }
           }
         }
         reader.onerror = () => {
