@@ -408,29 +408,29 @@ export default function App() {
     
     // Compress the image - very aggressive for production/deployment
     const primaryOptions = {
-      maxSizeMB: 0.3,
-      maxWidthOrHeight: 1024,
+      maxSizeMB: 0.25,
+      maxWidthOrHeight: 900,
       useWebWorker: true,
       fileType: 'image/jpeg',
-      initialQuality: 0.6
+      initialQuality: 0.55
     }
     
     // Fallback options if primary compression isn't enough
     const fallbackOptions = {
-      maxSizeMB: 0.15,
-      maxWidthOrHeight: 640,
+      maxSizeMB: 0.12,
+      maxWidthOrHeight: 600,
       useWebWorker: true,
       fileType: 'image/jpeg',
-      initialQuality: 0.4
+      initialQuality: 0.35
     }
     
     // Ultra fallback for extreme cases
     const ultraFallbackOptions = {
-      maxSizeMB: 0.08,
-      maxWidthOrHeight: 480,
+      maxSizeMB: 0.05,
+      maxWidthOrHeight: 400,
       useWebWorker: true,
       fileType: 'image/jpeg',
-      initialQuality: 0.3
+      initialQuality: 0.25
     }
     
     imageCompression(file, primaryOptions)
@@ -439,7 +439,7 @@ export default function App() {
         reader.onload = (event) => {
           const base64 = event.target.result
           // Check if base64 is still too large (rough estimate: 1.33x of file size)
-          if (base64.length > 1200000) {
+          if (base64.length > 1000000) {
             // Fallback: compress more aggressively
             setError('Recompressing image with higher compression...')
             imageCompression(file, fallbackOptions)
@@ -448,7 +448,7 @@ export default function App() {
                 fallbackReader.onload = (fallbackEvent) => {
                   const fallbackBase64 = fallbackEvent.target.result
                   // Check if still too large, use ultra fallback
-                  if (fallbackBase64.length > 800000) {
+                  if (fallbackBase64.length > 600000) {
                     setError('Applying final compression...')
                     imageCompression(file, ultraFallbackOptions)
                       .then((ultraCompressed) => {

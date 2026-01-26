@@ -3,11 +3,7 @@
   "builds": [
     {
       "src": "backend/src/server.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxLambdaSize": "50mb",
-        "memorySize": 3008
-      }
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -23,8 +19,5 @@
       "src": "/(.*)",
       "dest": "/backend/src/server.js"
     }
-  ],
-  "env": {
-    "NODE_OPTIONS": "-Xms256m -Xmx1024m"
-  }
+  ]
 }
