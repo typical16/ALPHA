@@ -664,9 +664,9 @@ export default function App() {
             </div>
           </main>
 
-          <footer className="border-t bg-sand-100/80 backdrop-blur p-3 flex-shrink-0 safe-area-bottom border-sand-500/30">
+          <footer className="border-t bg-sand-100/80 backdrop-blur px-3 md:px-4 py-2 md:py-3 flex-shrink-0 safe-area-bottom border-sand-500/30 space-y-2">
             {attachedImage && (
-              <div className="mb-2 relative inline-block">
+              <div className="relative inline-block">
                 <div className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-sage-500/50">
                   <img src={attachedImage} alt="Attached" className="w-full h-full object-cover" />
                   <button
@@ -691,7 +691,7 @@ export default function App() {
               />
               <label
                 htmlFor="image-upload"
-                className="h-[44px] md:h-[48px] w-[44px] md:w-[48px] flex items-center justify-center rounded-xl border border-sand-500/30 bg-sand-100/80 hover:bg-sand-100 cursor-pointer shadow-sm transition-colors active:scale-95"
+                className="h-[44px] md:h-[48px] w-[44px] md:w-[48px] flex items-center justify-center rounded-xl border border-sand-500/30 bg-sand-100/80 hover:bg-sand-100 cursor-pointer shadow-sm transition-colors active:scale-95 flex-shrink-0"
                 title="Attach image or take photo"
               >
                 <svg className="w-5 h-5 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -706,15 +706,15 @@ export default function App() {
                 onKeyDown={onKeyDown}
                 placeholder={attachedImage ? "Ask about the image…" : "Send a message…"}
                 rows={1}
-                className="flex-1 resize-none max-h-40 min-h-[44px] rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 bg-sand-100/80 md:min-h-[48px] placeholder:text-stone-400 border-sand-500/30 focus:ring-sage-500/40"
+                className="flex-1 resize-none max-h-40 min-h-[44px] rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 bg-sand-100/80 md:min-h-[48px] placeholder:text-stone-400 border-sand-500/30 focus:ring-sage-500/40 min-w-0"
               />
               <button
                 onClick={sendMessage}
                 disabled={!canSend}
-                className="h-[44px] md:h-[48px] px-4 rounded-xl bg-sage-600 hover:bg-sage-500 text-white disabled:opacity-50 disabled:cursor-not-allowed shadow-soft"
+                className="h-[44px] md:h-[48px] px-4 rounded-xl bg-sage-600 hover:bg-sage-500 text-white disabled:opacity-50 disabled:cursor-not-allowed shadow-soft flex-shrink-0"
               >Send</button>
             </div>
-              <div className="text-[11px] text-stone-500 mt-2">Enter to send. Shift+Enter for new line. Click camera icon to attach image.</div>
+            <div className="text-[11px] text-stone-500 leading-tight px-0.5">Enter to send. Shift+Enter for new line. Click camera icon to attach image.</div>
           </footer>
         </div>
       </div>
