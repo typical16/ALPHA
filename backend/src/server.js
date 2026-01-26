@@ -74,17 +74,6 @@ if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
   app.use(express.static(frontendDistPath));
 }
 
-// Error handler for payload too large
-app.use((err, req, res, next) => {
-  if (err.status === 413 || err.message?.includes('too large')) {
-    return res.status(413).json({ 
-      error: 'Payload too large. Please compress the image more.',
-      details: err.message 
-    });
-  }
-  next(err);
-});
-
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'openrouter-proxy', time: new Date().toISOString() });
 });
@@ -288,6 +277,24 @@ if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
     res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
 }
+
+// Global error handler (must be last)
+app.use((err, req, res, next) => {
+  // eslint-disable-next-line no-console
+  console.error('[Error]', err.message);
+  
+  if (err.status === 413 || err.message?.includes('too large')) {
+    return res.status(413).json({ 
+      error: 'Payload too large. Please compress the image more.',
+      details: 'The image is too large to process.'
+    });
+  }
+  
+  // Default error response
+  res.status(err.status || 500).json({ 
+    error: err.message || 'Internal server error'
+  });
+});
 
 app.listen(port, () => {
   // eslint-disable-next-line no-console
