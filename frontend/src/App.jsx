@@ -664,7 +664,7 @@ export default function App() {
             </div>
           </main>
 
-          <footer className="border-t bg-sand-100/80 backdrop-blur px-3 md:px-4 py-2 md:py-3 flex-shrink-0 safe-area-bottom border-sand-500/30 space-y-2">
+          <footer className="border-t bg-sand-100/80 backdrop-blur px-3 md:px-6 py-3 md:py-4 flex-shrink-0 safe-area-bottom border-sand-500/30 space-y-2">
             {attachedImage && (
               <div className="relative inline-block">
                 <div className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-sage-500/50">
