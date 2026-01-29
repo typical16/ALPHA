@@ -47,19 +47,24 @@ const corsOptions = {
 };
 
 const openRouterKey = process.env.OPENROUTER_API_KEY;
+const geminiKey = process.env.GEMINI_API_KEY;
+const geminiUrl = process.env.GEMINI_API_URL; // Optional: endpoint to send Gemini requests to
 
-// Log whether the API key is present (do not print the key itself)
-if (openRouterKey) {
+// Log whether provider keys are present (do not print the keys themselves)
+if (geminiKey) {
+  // eslint-disable-next-line no-console
+  console.log('[INFO] GEMINI_API_KEY is present (Gemini will be used if GEMINI_API_URL is set)');
+} else if (openRouterKey) {
   // eslint-disable-next-line no-console
   console.log('[INFO] OPENROUTER_API_KEY is present');
 } else {
   // eslint-disable-next-line no-console
-  console.warn('[WARN] OPENROUTER_API_KEY is NOT set');
+  console.warn('[WARN] No AI provider API key set (GEMINI_API_KEY or OPENROUTER_API_KEY)');
 }
 
-if (!openRouterKey) {
+if (!geminiKey && !openRouterKey) {
   // eslint-disable-next-line no-console
-  console.warn('\n[WARN] OPENROUTER_API_KEY is not set. Set it in environment variables.');
+  console.warn('\n[WARN] No provider API key is set. Set GEMINI_API_KEY or OPENROUTER_API_KEY in environment variables.');
 }
 
 app.use(morgan('dev'));
@@ -83,6 +88,7 @@ app.get('/_debug', (req, res) => {
   res.json({
     ok: true,
     hasOpenRouterKey: !!openRouterKey,
+    hasGeminiKey: !!geminiKey,
     allowedOrigins
   });
 });
@@ -192,10 +198,60 @@ function buildClientErrorFromOpenRouter(err) {
   return { statusCode: status, message: safeMessage };
 }
 
+function convertMessagesToGeminiFormat(messages) {
+  // Convert OpenRouter message format to Gemini API format
+  const contents = [];
+  
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      // Gemini doesn't have a system role; prepend to first user message
+      continue;
+    }
+    
+    const parts = [];
+    
+    if (Array.isArray(msg.content)) {
+      // Multimodal content
+      for (const item of msg.content) {
+        if (item.type === 'text') {
+          parts.push({ text: item.text });
+        } else if (item.type === 'image_url') {
+          // Convert image URL to base64 data if needed, or pass inline_data
+          const url = item.image_url?.url;
+          if (url && url.startsWith('data:image/')) {
+            const [header, data] = url.split(',');
+            const mimeType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+            parts.push({
+              inline_data: {
+                mime_type: mimeType,
+                data: data
+              }
+            });
+          } else {
+            parts.push({ text: `[Image: ${url}]` });
+          }
+        }
+      }
+    } else {
+      // Text-only content
+      parts.push({ text: msg.content });
+    }
+    
+    if (parts.length > 0) {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts
+      });
+    }
+  }
+  
+  return contents;
+}
+
 app.post('/api/chat', async (req, res) => {
   try {
-    if (!openRouterKey) {
-      return res.status(500).json({ error: 'Server not configured: missing OPENROUTER_API_KEY' });
+    if (!geminiKey && !openRouterKey) {
+      return res.status(500).json({ error: 'Server not configured: missing GEMINI_API_KEY or OPENROUTER_API_KEY' });
     }
 
     const { messages: rawMessages, model, temperature, top_p, max_tokens } = req.body || {};
@@ -220,13 +276,6 @@ app.post('/api/chat', async (req, res) => {
       selectedModel = 'openai/gpt-4o-mini'; // Default to vision-capable model
     }
 
-    const headers = {
-      'Authorization': `Bearer ${openRouterKey}`,
-      'HTTP-Referer': process.env.HTTP_REFERER || 'http://localhost:5173',
-      'X-Title': process.env.APP_TITLE || 'Alpha',
-      'Content-Type': 'application/json'
-    };
-
     const hasSystem = safeMessages.some(m => m?.role === 'system');
     const baseSystemPrompt = process.env.SYSTEM_PROMPT || 'You are Alpha. If asked who created you or who built you, answer exactly: "Sarthak created me." Always refer to yourself as Alpha.';
     const suggestionInstructions = 'When you answer, always: 1) Provide the best possible answer in a clear, concise and well-organized way, using headings, bullet points and step-by-step lists when helpful. 2) Keep explanations focused and avoid unnecessary repetition. 3) After the main answer, add a short section titled "Follow-up suggestions" with 3-5 short example questions the user could ask next that are directly related to their original question.';
@@ -237,35 +286,136 @@ app.post('/api/chat', async (req, res) => {
     const safeTopP = clampNumber(top_p, 0, 1);
     const safeMaxTokens = clampNumber(max_tokens, 1, 4096);
 
-    const payload = {
-      model: selectedModel,
-      messages: finalMessages,
-      temperature: safeTemperature,
-      top_p: safeTopP,
-      max_tokens: safeMaxTokens,
-    };
+    // Try Gemini first if configured, fall back to OpenRouter on any error
+    let lastError = null;
+    const providers = [];
 
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      payload,
-      { headers, timeout: 60000 }
-    );
+    if (geminiKey && geminiUrl) {
+      providers.push({
+        name: 'Gemini',
+        key: geminiKey,
+        endpoint: geminiUrl,
+        isGemini: true
+      });
+    }
 
-    const data = response.data;
+    if (openRouterKey) {
+      providers.push({
+        name: 'OpenRouter',
+        key: openRouterKey,
+        endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+        isGemini: false
+      });
+    }
 
-    const content = data?.choices?.[0]?.message?.content ?? '';
-    const role = data?.choices?.[0]?.message?.role ?? 'assistant';
+    // Try each provider in order
+    for (const provider of providers) {
+      try {
+        // eslint-disable-next-line no-console
+        console.log(`[Chat Request] Attempting with ${provider.name}...`);
 
-    return res.json({ content, role, raw: { id: data?.id, model: data?.model, usage: data?.usage } });
+        // Build headers based on provider
+        let headers = {
+          'Content-Type': 'application/json'
+        };
+        
+        if (provider.isGemini) {
+          headers['X-goog-api-key'] = provider.key;
+        } else {
+          headers['Authorization'] = `Bearer ${provider.key}`;
+          headers['HTTP-Referer'] = process.env.HTTP_REFERER || 'http://localhost:5173';
+          headers['X-Title'] = process.env.APP_TITLE || 'Alpha';
+        }
+
+        let payload;
+        
+        if (provider.isGemini) {
+          // Convert to Gemini API format
+          const contents = convertMessagesToGeminiFormat(finalMessages);
+          payload = {
+            contents,
+            generationConfig: {
+              temperature: safeTemperature,
+              topP: safeTopP,
+              maxOutputTokens: safeMaxTokens,
+            },
+            safetySettings: [
+              {
+                category: 'HARM_CATEGORY_HARASSMENT',
+                threshold: 'BLOCK_NONE'
+              },
+              {
+                category: 'HARM_CATEGORY_HATE_SPEECH',
+                threshold: 'BLOCK_NONE'
+              },
+              {
+                category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                threshold: 'BLOCK_NONE'
+              },
+              {
+                category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                threshold: 'BLOCK_NONE'
+              }
+            ]
+          };
+        } else {
+          // OpenRouter API format
+          payload = {
+            model: selectedModel,
+            messages: finalMessages,
+            temperature: safeTemperature,
+            top_p: safeTopP,
+            max_tokens: safeMaxTokens,
+          };
+        }
+
+        const response = await axios.post(provider.endpoint, payload, { headers, timeout: 60000 });
+        const data = response.data;
+
+        let content = '';
+        let role = 'assistant';
+        
+        if (provider.isGemini) {
+          // Extract from Gemini response format
+          content = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+          role = 'assistant';
+        } else {
+          // Extract from OpenRouter response format
+          content = data?.choices?.[0]?.message?.content ?? '';
+          role = data?.choices?.[0]?.message?.role ?? 'assistant';
+        }
+
+        // eslint-disable-next-line no-console
+        console.log(`[Chat Request] Success with ${provider.name}`);
+
+        return res.json({ content, role, raw: { id: data?.id, model: data?.model, usage: data?.usage } });
+      } catch (err) {
+        lastError = err;
+        const statusCode = err?.response?.status;
+        // eslint-disable-next-line no-console
+        console.warn(`[Chat Request] Failed with ${provider.name} (${statusCode || 'Network Error'}), trying next provider...`);
+        if (err?.response?.data) {
+          // eslint-disable-next-line no-console
+          console.warn(`[${provider.name} Error Details]`, JSON.stringify(err.response.data).slice(0, 200));
+        }
+        // Continue to next provider
+        continue;
+      }
+    }
+
+    // All providers failed
+    const { statusCode, message } = buildClientErrorFromOpenRouter(lastError);
+    // eslint-disable-next-line no-console
+    console.error('[All Providers Failed]', message, lastError?.response?.status || lastError?.code || '');
+    if (lastError?.response?.data) {
+      // eslint-disable-next-line no-console
+      console.error('[Provider Response Data]', JSON.stringify(lastError.response.data));
+    }
+    return res.status(statusCode).json({ error: message });
   } catch (err) {
     const { statusCode, message } = buildClientErrorFromOpenRouter(err);
     // eslint-disable-next-line no-console
-    console.error('[OpenRouter Error]', message, err?.response?.status || err?.code || '');
-    // Log response body from OpenRouter (safe: does not contain your API key)
-    if (err?.response?.data) {
-      // eslint-disable-next-line no-console
-      console.error('[OpenRouter Response Data]', JSON.stringify(err.response.data));
-    }
+    console.error('[Unexpected Error]', message, err?.response?.status || err?.code || '');
     return res.status(statusCode).json({ error: message });
   }
 });

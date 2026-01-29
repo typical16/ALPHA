@@ -8,7 +8,7 @@
 
 Before deploying, make sure you have:
 
-1. ✅ **OpenRouter API Key** - Get yours at [openrouter.ai/keys](https://openrouter.ai/keys)
+1. ✅ **Gemini API Key / URL** - Set `GEMINI_API_KEY` and `GEMINI_API_URL` (or use `OPENROUTER_API_KEY` as a fallback)
 2. ✅ **GitHub Account** - To fork this repository
 3. ✅ **Vercel Account** - Sign up at [vercel.com](https://vercel.com)
 
@@ -18,7 +18,9 @@ When deploying on Vercel, you'll need to set these environment variables:
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `OPENROUTER_API_KEY` | `sk-or-v1-...` | Your OpenRouter API key (required) |
+| `GEMINI_API_KEY` | | Your Gemini API key (preferred) |
+| `GEMINI_API_URL` | | The Gemini endpoint URL to send requests to |
+| `OPENROUTER_API_KEY` | `sk-or-v1-...` | Your OpenRouter API key (fallback) |
 | `ORIGIN` | `https://your-app.vercel.app` | Your Vercel domain (auto-generated) |
 | `HTTP_REFERER` | `https://your-app.vercel.app` | Your Vercel domain (auto-generated) |
 | `APP_TITLE` | `Alpha Chat App` | Your app's title (optional) |
