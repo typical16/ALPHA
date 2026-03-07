@@ -767,8 +767,8 @@ export default function App() {
           <aside
             aria-label="Settings panel"
             className={
-              'glass-sidebar w-full md:w-80 md:flex-shrink-0 md:block overflow-hidden flex flex-col relative z-20 ' +
-              (showSettings ? 'block' : 'hidden md:block')
+              'glass-sidebar w-full flex-1 md:flex-none md:w-80 md:flex-shrink-0 overflow-hidden flex-col relative z-20 ' +
+              (showSettings ? 'flex' : 'hidden md:flex')
             }
           >
             <div className="h-14 flex items-center justify-between px-5 border-b border-[var(--border-glass)] flex-shrink-0">
@@ -868,7 +868,7 @@ export default function App() {
           </aside>
 
           {/* ── Main column ── */}
-          <div className="flex-1 flex flex-col min-w-0 h-full relative">
+          <div className={`flex-1 flex-col min-w-0 h-full relative ${showSettings ? 'hidden md:flex' : 'flex'}`}>
             {/* Header */}
             <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-panel flex items-center justify-between flex-shrink-0 z-10">
               <div className="flex items-center gap-3">
