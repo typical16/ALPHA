@@ -741,7 +741,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div
-        className={`w-full h-screen flex flex-col overflow-hidden text-white relative ${isDragOver ? 'drag-over-active' : ''}`}
+        className={`w-full h-[100dvh] flex flex-col overflow-hidden text-white relative ${isDragOver ? 'drag-over-active' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
