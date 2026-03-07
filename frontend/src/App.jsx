@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import axios from 'axios'
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -7,11 +6,10 @@ import rehypeKatex from 'rehype-katex'
 import imageCompression from 'browser-image-compression'
 import 'katex/dist/katex.min.css'
 
-// Configure axios base URL for production
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : '');
-axios.defaults.baseURL = API_BASE_URL;
+// API_BASE_URL: empty string → Vite proxy handles /api/* → localhost:3001
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
-/** Normalize LaTeX delimiters so remark-math can render: \( \) -> $ $ and \[ \] -> $$ $$ */
+/** Normalize LaTeX delimiters so remark-math can render */
 function normalizeMathDelimiters(text) {
   if (typeof text !== 'string') return text
   return text
@@ -23,6 +21,7 @@ function normalizeMathDelimiters(text) {
 
 const LOCAL_STORAGE_KEY = 'openrouter_chat_history_v1'
 const LOCAL_STORAGE_SETTINGS = 'openrouter_chat_settings_v1'
+const MAX_INPUT_CHARS = 4000
 
 function loadHistory() {
   try {
@@ -39,70 +38,96 @@ function loadHistory() {
 function saveHistory(history) {
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(history))
-  } catch {}
+  } catch { }
 }
 
 function extractFollowUpSuggestions(content) {
   if (!content || typeof content !== 'string') return []
   const lines = content.split('\n')
   const suggestions = []
-
   const startIndex = lines.findIndex(line => {
     const t = line.trim().toLowerCase()
     return t === 'follow-up suggestions:' || t === 'follow-up suggestions' || t.startsWith('### follow-up suggestions')
   })
-
   if (startIndex === -1) return []
-
   for (let i = startIndex + 1; i < lines.length; i++) {
     const line = lines[i].trim()
     if (!line) continue
-
-    // stop if we hit a new markdown heading after we've started collecting
     if (line.startsWith('#') && !line.toLowerCase().startsWith('### follow-up suggestions')) {
       if (suggestions.length > 0) break
       continue
     }
-
     const bulletMatch = line.match(/^[-*]\s+(.*)$/)
     const numberedMatch = line.match(/^\d+\.\s+(.*)$/)
     const text = (bulletMatch && bulletMatch[1]) || (numberedMatch && numberedMatch[1]) || null
-
     if (text) {
       suggestions.push(text.trim())
       if (suggestions.length >= 5) break
     } else if (suggestions.length > 0) {
-      // once we started reading the list, stop on the first non-list line
       break
     }
   }
-
   return suggestions
 }
 
+// ── Copy Toast ────────────────────────────────────────────
+function CopyToast({ visible }) {
+  return (
+    <div className={`copy-toast ${visible ? 'copy-toast-visible' : ''}`} aria-live="polite">
+      ✓ Copied!
+    </div>
+  )
+}
+
+// ── Error Boundary ────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center z-10 relative">
+          <div className="text-5xl drop-shadow-lg">⚠️</div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Something went wrong</h2>
+          <p className="text-stone-400 text-sm max-w-sm">{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-5 py-2.5 rounded-xl glass-button text-white text-sm font-medium shadow-glow hover:shadow-lg transition-all"
+          >
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// ── Intro Screen ──────────────────────────────────────────
 function AlphaIntro({ onClose }) {
   const [animationStage, setAnimationStage] = useState(0)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-  
+
   useEffect(() => {
-    const timer1 = setTimeout(() => setAnimationStage(1), 200)
-    const timer2 = setTimeout(() => setAnimationStage(2), 1000)
-    const timer3 = setTimeout(() => setAnimationStage(3), 2000)
-    return () => {
-      clearTimeout(timer1)
-      clearTimeout(timer2)
-      clearTimeout(timer3)
-    }
+    const t1 = setTimeout(() => setAnimationStage(1), 200)
+    const t2 = setTimeout(() => setAnimationStage(2), 1000)
+    const t3 = setTimeout(() => setAnimationStage(3), 2000)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [])
 
   useEffect(() => {
     const handleMouseMove = (e) => {
-      const centerX = window.innerWidth / 2
-      const centerY = window.innerHeight / 2
-      setMousePos({
-        x: (e.clientX - centerX) / centerX * 15,
-        y: (e.clientY - centerY) / centerY * 15
-      })
+      const cx = window.innerWidth / 2
+      const cy = window.innerHeight / 2
+      setMousePos({ x: (e.clientX - cx) / cx * 15, y: (e.clientY - cy) / cy * 15 })
     }
     window.addEventListener('mousemove', handleMouseMove)
     return () => window.removeEventListener('mousemove', handleMouseMove)
@@ -111,257 +136,345 @@ function AlphaIntro({ onClose }) {
   const letters = ['A', 'L', 'P', 'H', 'A']
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-sage-900 via-sage-700 to-amber-800 overflow-hidden">
-      {/* Animated background particles */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md overflow-hidden">
       <div className="absolute inset-0 overflow-hidden">
         {[...Array(20)].map((_, i) => (
           <div
             key={i}
             className="absolute rounded-full bg-white/10 animate-float"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              width: `${Math.random() * 4 + 2}px`,
-              height: `${Math.random() * 4 + 2}px`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${Math.random() * 3 + 2}s`
+              left: `${(i * 5.13) % 100}%`,
+              top: `${(i * 7.37) % 100}%`,
+              width: `${(i % 4) + 2}px`,
+              height: `${(i % 4) + 2}px`,
+              animationDelay: `${(i % 3)}s`,
+              animationDuration: `${(i % 3) + 2}s`
             }}
           />
         ))}
       </div>
 
       <div className="text-center relative z-10">
-        {/* 3D Logo Container */}
-        <div 
+        <div
           className="relative mb-8"
-          style={{
-            perspective: '1200px',
-            perspectiveOrigin: 'center center',
-            transformStyle: 'preserve-3d',
-          }}
+          style={{ perspective: '1200px', perspectiveOrigin: 'center center', transformStyle: 'preserve-3d' }}
         >
           <div
             className="alpha-logo-3d-container"
             style={{
               transformStyle: 'preserve-3d',
-              transform: animationStage >= 1 
-                ? `rotateY(${mousePos.x + (animationStage >= 2 ? 5 : 0)}deg) rotateX(${-mousePos.y + (animationStage >= 2 ? 2 : 0)}deg)` 
+              transform: animationStage >= 1
+                ? `rotateY(${mousePos.x + (animationStage >= 2 ? 5 : 0)}deg) rotateX(${-mousePos.y + (animationStage >= 2 ? 2 : 0)}deg)`
                 : 'rotateY(0deg) rotateX(0deg)',
               transition: animationStage >= 1 ? 'transform 0.15s ease-out' : 'none',
             }}
           >
-          <div className="flex items-center justify-center gap-2 md:gap-4">
-            {letters.map((letter, index) => (
-              <div
-                key={index}
-                className="alpha-3d-letter"
-                style={{
-                  transformStyle: 'preserve-3d',
-                  animation: animationStage >= 1 
-                    ? `letterFlip 0.8s ease-out ${index * 0.1}s both, letterFloat 3s ease-in-out ${index * 0.2}s infinite`
-                    : 'none',
-                  animationFillMode: 'both'
-                }}
-              >
-                {/* Front face */}
+            <div className="flex items-center justify-center gap-2 md:gap-4">
+              {letters.map((letter, index) => (
                 <div
-                  className="alpha-letter-face alpha-letter-front"
+                  key={index}
+                  className="alpha-3d-letter"
                   style={{
-                    transform: 'translateZ(50px)',
+                    transformStyle: 'preserve-3d',
+                    animation: animationStage >= 1
+                      ? `letterFlip 0.8s ease-out ${index * 0.1}s both, letterFloat 3s ease-in-out ${index * 0.2}s infinite`
+                      : 'none',
+                    animationFillMode: 'both'
                   }}
                 >
-                  <span style={{
-                    background: 'linear-gradient(135deg, #7A8B84 0%, #D97706 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    filter: 'drop-shadow(0 0 15px rgba(218, 119, 6, 0.6))',
-                  }}>
-                    {letter}
-                  </span>
+                  {[
+                    { transform: 'translateZ(50px)', cls: 'alpha-letter-front' },
+                    { transform: 'rotateY(180deg) translateZ(50px)', cls: 'alpha-letter-back' },
+                    { transform: 'rotateX(90deg) translateZ(50px)', cls: 'alpha-letter-top' },
+                    { transform: 'rotateX(-90deg) translateZ(50px)', cls: 'alpha-letter-bottom' },
+                    { transform: 'rotateY(90deg) translateZ(50px)', cls: 'alpha-letter-right' },
+                    { transform: 'rotateY(-90deg) translateZ(50px)', cls: 'alpha-letter-left' },
+                  ].map(({ transform, cls }) => (
+                    <div
+                      key={cls}
+                      className={`alpha-letter-face ${cls}`}
+                      style={{ transform }}
+                    >
+                      <span style={{
+                        background: 'linear-gradient(135deg, #00F0FF 0%, #7000FF 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                        filter: 'drop-shadow(0 0 15px rgba(0,240,255,0.6))',
+                      }}>{letter}</span>
+                    </div>
+                  ))}
                 </div>
-                {/* Back face */}
-                <div
-                  className="alpha-letter-face alpha-letter-back"
-                  style={{
-                    transform: 'rotateY(180deg) translateZ(50px)',
-                  }}
-                >
-                  <span style={{
-                    background: 'linear-gradient(135deg, #D97706 0%, #7A8B84 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    filter: 'drop-shadow(0 0 10px rgba(122, 139, 132, 0.5))',
-                  }}>
-                    {letter}
-                  </span>
-                </div>
-                {/* Top face */}
-                <div
-                  className="alpha-letter-face alpha-letter-top"
-                  style={{
-                    transform: 'rotateX(90deg) translateZ(50px)',
-                  }}
-                >
-                  <span style={{
-                    background: 'linear-gradient(135deg, #66766F 0%, #F59E0B 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    filter: 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.4))',
-                  }}>
-                    {letter}
-                  </span>
-                </div>
-                {/* Bottom face */}
-                <div
-                  className="alpha-letter-face alpha-letter-bottom"
-                  style={{
-                    transform: 'rotateX(-90deg) translateZ(50px)',
-                  }}
-                >
-                  <span style={{
-                    background: 'linear-gradient(135deg, #66766F 0%, #F59E0B 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    filter: 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.4))',
-                  }}>
-                    {letter}
-                  </span>
-                </div>
-                {/* Right face */}
-                <div
-                  className="alpha-letter-face alpha-letter-right"
-                  style={{
-                    transform: 'rotateY(90deg) translateZ(50px)',
-                  }}
-                >
-                  <span style={{
-                    background: 'linear-gradient(135deg, #515E59 0%, #D97706 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    filter: 'drop-shadow(0 0 8px rgba(217, 119, 6, 0.4))',
-                  }}>
-                    {letter}
-                  </span>
-                </div>
-                {/* Left face */}
-                <div
-                  className="alpha-letter-face alpha-letter-left"
-                  style={{
-                    transform: 'rotateY(-90deg) translateZ(50px)',
-                  }}
-                >
-                  <span style={{
-                    background: 'linear-gradient(135deg, #515E59 0%, #D97706 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    filter: 'drop-shadow(0 0 8px rgba(217, 119, 6, 0.4))',
-                  }}>
-                    {letter}
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-          </div>
-          
-          {/* Glow effect */}
-          <div 
-            className={`absolute inset-0 blur-3xl opacity-60 transition-opacity duration-1000 ${
-              animationStage >= 2 ? 'opacity-60' : 'opacity-0'
-            }`}
+
+          <div
+            className={`absolute inset-0 blur-3xl transition-opacity duration-1000 ${animationStage >= 2 ? 'opacity-60' : 'opacity-0'}`}
             style={{
-              background: 'radial-gradient(circle, rgba(218, 119, 6, 0.4) 0%, rgba(122, 139, 132, 0.4) 100%)',
+              background: 'radial-gradient(circle, rgba(0,240,255,0.4) 0%, rgba(112,0,255,0.4) 100%)',
               transform: 'translateZ(-100px) scale(1.5)',
               animation: animationStage >= 2 ? 'pulseGlow 2s ease-in-out infinite' : 'none'
             }}
           />
         </div>
 
-        {/* Subtitle */}
-        <p 
-          className={`text-xl md:text-2xl text-white/90 font-light transition-all duration-700 delay-500 ${
-            animationStage >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-          }`}
-        >
+        <p className={`text-xl md:text-2xl text-white/90 font-light transition-all duration-700 delay-500 ${animationStage >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           Your intelligent AI assistant
         </p>
-        
-        {/* Get Started Button */}
+
         <button
           onClick={onClose}
-          className={`mt-8 px-8 py-3 rounded-xl bg-white/10 backdrop-blur-md text-white border border-white/20 hover:bg-white/20 transition-all duration-300 shadow-lg hover:shadow-xl ${
-            animationStage >= 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
-          }`}
+          aria-label="Get started with Alpha"
+          className={`mt-8 px-8 py-3 rounded-xl bg-white/10 backdrop-blur-md text-white border border-white/20 hover:bg-white/20 transition-all duration-300 shadow-lg hover:shadow-xl font-medium ${animationStage >= 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
         >
-          Get Started
+          Get Started →
         </button>
       </div>
     </div>
   )
 }
 
+// ── Image Compression ─────────────────────────────────────
+async function compressImageToBase64(file) {
+  const compressionStages = [
+    { maxSizeMB: 0.25, maxWidthOrHeight: 900, useWebWorker: true, fileType: 'image/jpeg', initialQuality: 0.55 },
+    { maxSizeMB: 0.12, maxWidthOrHeight: 600, useWebWorker: true, fileType: 'image/jpeg', initialQuality: 0.35 },
+    { maxSizeMB: 0.05, maxWidthOrHeight: 400, useWebWorker: true, fileType: 'image/jpeg', initialQuality: 0.25 },
+  ]
+  const sizeLimits = [1_000_000, 600_000, Infinity]
+
+  for (let i = 0; i < compressionStages.length; i++) {
+    const compressed = await imageCompression(file, compressionStages[i])
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = e => resolve(e.target.result)
+      reader.onerror = () => reject(new Error('Failed to read image file'))
+      reader.readAsDataURL(compressed)
+    })
+    if (base64.length <= sizeLimits[i]) return base64
+  }
+  throw new Error('Image could not be compressed to an acceptable size')
+}
+
+// ── Streaming message display ─────────────────────────────
+// Shows content as it streams in, with a blinking cursor
+function StreamingContent({ content, done }) {
+  return (
+    <div className="streaming-response">
+      <div className="prose max-w-none min-w-0 overflow-hidden prose-a:text-[#00F0FF] prose-strong:text-[var(--text-primary)] prose-code:bg-black/10 prose-code:px-1 prose-code:py-0.5 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-1 prose-pre:my-2 prose-code:before:content-[''] prose-code:after:content-[''] text-sm markdown-math text-[var(--text-primary)]">
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+          {normalizeMathDelimiters(content)}
+        </ReactMarkdown>
+      </div>
+      {!done && <span className="typing-cursor" aria-hidden>|</span>}
+    </div>
+  )
+}
+
+// ── Message Bubble (memoized) ─────────────────────────────
+const MessageBubble = memo(function MessageBubble({ role, content, time, image, isStreaming, streamDone }) {
+  const isUser = role === 'user'
+  const [copyState, setCopyState] = useState('idle') // 'idle' | 'copied'
+
+  const copyText = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopyState('copied')
+      setTimeout(() => setCopyState('idle'), 2000)
+    } catch { }
+  }, [content])
+
+  return (
+    <div className={`${isUser ? 'flex justify-end' : 'flex justify-start'} msg-slide-in`} style={{ minWidth: 0 }}>
+      <div className="flex max-w-[90%] md:max-w-[75%] min-w-0 gap-3 items-start">
+        {!isUser && (
+          <div
+            aria-label="Alpha AI"
+            className="avatar-pop flex h-7 w-7 md:h-9 md:w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#00F0FF] to-[#7000FF] text-white shrink-0 text-[10px] md:text-xs font-bold shadow-glow"
+          >
+            AI
+          </div>
+        )}
+        <div className={
+          'rounded-2xl px-3.5 py-2.5 md:px-5 md:py-4 relative group min-w-0 overflow-hidden leading-relaxed ' +
+          (isUser
+            ? 'user-bubble'
+            : 'ai-bubble glass-panel')
+        }>
+          {image && (
+            <div className="mb-3 rounded-xl overflow-hidden max-w-sm border border-white/20">
+              <img src={image} alt="User uploaded" className="w-full h-auto max-h-64 object-contain" />
+            </div>
+          )}
+          {isUser ? (
+            <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white">{content}</div>
+          ) : isStreaming ? (
+            <StreamingContent content={content} done={streamDone} />
+          ) : (
+            <div className="prose max-w-none min-w-0 overflow-hidden prose-a:text-[#00F0FF] prose-strong:text-[var(--text-primary)] prose-code:bg-black/10 prose-code:px-1 prose-code:py-0.5 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-1 prose-pre:my-2 prose-code:before:content-[''] prose-code:after:content-[''] text-sm markdown-math text-[var(--text-primary)]">
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {normalizeMathDelimiters(content)}
+              </ReactMarkdown>
+            </div>
+          )}
+          {/* Copy button — visible on hover for assistant messages */}
+          {!isUser && !isStreaming && (
+            <button
+              onClick={copyText}
+              aria-label="Copy message"
+              title="Copy"
+              className={`copy-btn opacity-0 group-hover:opacity-100 transition-all absolute -top-2 -right-2 text-xs rounded-lg px-2 py-1 shadow-md ${copyState === 'copied' ? 'bg-[#00F0FF] text-black font-bold opacity-100' : 'glass-button text-white'}`}
+            >
+              {copyState === 'copied' ? '✓ Copied!' : 'Copy'}
+            </button>
+          )}
+          <div className={(isUser ? 'text-white/70' : 'text-stone-400') + ' text-[10px] mt-1.5 select-none'}>
+            {time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+          </div>
+        </div>
+        {isUser && (
+          <div
+            aria-label="You"
+            className="avatar-pop flex h-7 w-7 md:h-9 md:w-9 items-center justify-center rounded-full bg-gradient-to-br from-stone-600 to-stone-800 text-white shrink-0 text-[10px] md:text-xs font-bold shadow-soft border border-stone-500/30"
+          >
+            U
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
+// ── Thinking shimmer (better loading indicator) ───────────
+function ThinkingBubble() {
+  return (
+    <div className="flex justify-start msg-slide-in">
+      <div className="flex gap-3 items-start">
+        <div className="avatar-pop flex h-7 w-7 md:h-9 md:w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#00F0FF] to-[#7000FF] text-white shrink-0 text-[10px] md:text-xs font-bold shadow-glow">
+          AI
+        </div>
+        <div className="ai-bubble glass-panel max-w-[85%] rounded-2xl px-3.5 py-2.5 md:px-5 md:py-4">
+          <div className="alpha-processing" aria-label="Alpha is thinking">
+            <div className="alpha-core-container">
+              <div className="alpha-orbit-2" />
+              <div className="alpha-orbit-1" />
+              <div className="alpha-core" />
+            </div>
+            <div className="alpha-processing-text">PROCESSING</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Scroll to Bottom FAB ──────────────────────────────────
+function ScrollToBottomFAB({ visible, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Scroll to bottom"
+      className={`scroll-fab ${visible ? 'scroll-fab-visible' : ''}`}
+    >
+      ↓
+    </button>
+  )
+}
+
+// ── Starter prompts for clickable empty-state cards ───────
+const STARTER_PROMPTS = {
+  'Ask anything': 'What are the most fascinating things happening in science right now?',
+  'Analyze images': 'I\'ll attach an image — can you describe what you see in detail?',
+  'Write code': 'Write a Python function that checks if a number is prime, with explanation.',
+  'Draft content': 'Write a professional email requesting a meeting with a new client.',
+}
+
+// ── Main App ──────────────────────────────────────────────
 export default function App() {
   const [messages, setMessages] = useState(() => loadHistory())
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showSettings, setShowSettings] = useState(false)
-  const [attachedImage, setAttachedImage] = useState(null) // base64 image data
-  const [compressingImage, setCompressingImage] = useState(false) // track image compression state
-  const [showIntro, setShowIntro] = useState(() => {
-    // Show intro only on first visit
-    const hasSeenIntro = localStorage.getItem('alpha_has_seen_intro')
-    return !hasSeenIntro
+  const [theme, setTheme] = useState(() => {
+    try {
+      const savedTheme = localStorage.getItem('alpha_theme')
+      if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+    } catch {
+      return 'dark'
+    }
   })
+  const [showSettings, setShowSettings] = useState(false)
+  const [attachedImage, setAttachedImage] = useState(null)
+  const [compressingImage, setCompressingImage] = useState(false)
+  const [showIntro, setShowIntro] = useState(() => !localStorage.getItem('alpha_has_seen_intro'))
   const [settings, setSettings] = useState(() => {
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_SETTINGS)
       if (!raw) return { temperature: 0.7 }
       const parsed = JSON.parse(raw)
-      return {
-        temperature: typeof parsed.temperature === 'number' ? parsed.temperature : 0.7,
-      }
+      return { temperature: typeof parsed.temperature === 'number' ? parsed.temperature : 0.7 }
     } catch {
       return { temperature: 0.7 }
     }
   })
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [showScrollFAB, setShowScrollFAB] = useState(false)
 
   const containerRef = useRef(null)
   const inputRef = useRef(null)
   const abortRef = useRef(null)
   const fileInputRef = useRef(null)
-  const [healthy, setHealthy] = useState(null) // null=unknown, true/false
+  const [healthy, setHealthy] = useState(null)
 
+  // Sync theme class to root
   useEffect(() => {
-    saveHistory(messages)
-  }, [messages])
+    try { localStorage.setItem('alpha_theme', theme) } catch { }
+    if (theme === 'light') {
+      document.documentElement.classList.add('light')
+    } else {
+      document.documentElement.classList.remove('light')
+    }
+  }, [theme])
 
+  useEffect(() => { saveHistory(messages) }, [messages])
   useEffect(() => {
-    try { localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(settings)) } catch {}
+    try { localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(settings)) } catch { }
   }, [settings])
 
-  useEffect(() => {
-    containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, loading])
+  // Scroll to bottom helper
+  const scrollToBottom = useCallback((behavior = 'smooth') => {
+    containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior })
+  }, [])
 
+  // Auto-scroll on new messages/loading
   useEffect(() => {
-    // initial health check and periodic ping
+    scrollToBottom()
+  }, [messages, loading, scrollToBottom])
+
+  // Scroll FAB visibility
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handleScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      setShowScrollFAB(distFromBottom > 200)
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Health check ping every 15s
+  useEffect(() => {
     let mounted = true
     async function ping() {
       try {
         const healthUrl = API_BASE_URL ? `${API_BASE_URL}/health` : '/health'
         const r = await fetch(healthUrl, { cache: 'no-store' })
-        if (!mounted) return
-        setHealthy(r.ok)
+        if (mounted) setHealthy(r.ok)
       } catch {
-        if (!mounted) return
-        setHealthy(false)
+        if (mounted) setHealthy(false)
       }
     }
     ping()
@@ -369,13 +482,20 @@ export default function App() {
     return () => { mounted = false; clearInterval(t) }
   }, [])
 
+  // Auto-resize textarea
   useEffect(() => {
-    // autoresize input
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
       inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px'
     }
   }, [input])
+
+  // Auto-focus on load (skip when intro is showing)
+  useEffect(() => {
+    if (!showIntro) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [showIntro])
 
   const canSend = useMemo(() => (input.trim().length > 0 || attachedImage) && !loading, [input, attachedImage, loading])
 
@@ -387,218 +507,197 @@ export default function App() {
   }, [messages])
 
   const followUpSuggestions = useMemo(
-    () => (lastAssistantMessage ? extractFollowUpSuggestions(lastAssistantMessage.content) : []),
+    () => lastAssistantMessage ? extractFollowUpSuggestions(lastAssistantMessage.content) : [],
     [lastAssistantMessage]
   )
 
-  function handleImageSelect(e) {
-    const file = e.target.files?.[0]
-    if (!file || compressingImage) return
-    
+  // ── Drag & Drop handlers ──────────────────────────────
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback(async (e) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
     if (!file.type.startsWith('image/')) {
-      setError('Please select an image file')
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
+      setError('Only image files can be dropped here')
       return
     }
-    
     setCompressingImage(true)
-    setError('Compressing image...')
-    
-    // Compress the image - very aggressive for production/deployment
-    const primaryOptions = {
-      maxSizeMB: 0.25,
-      maxWidthOrHeight: 900,
-      useWebWorker: true,
-      fileType: 'image/jpeg',
-      initialQuality: 0.55
+    setError('Compressing image…')
+    try {
+      const base64 = await compressImageToBase64(file)
+      setAttachedImage(base64)
+      setError('')
+    } catch (err) {
+      setError('Failed to process image: ' + err.message)
+    } finally {
+      setCompressingImage(false)
     }
-    
-    // Fallback options if primary compression isn't enough
-    const fallbackOptions = {
-      maxSizeMB: 0.12,
-      maxWidthOrHeight: 600,
-      useWebWorker: true,
-      fileType: 'image/jpeg',
-      initialQuality: 0.35
+  }, [])
+
+  async function handleImageSelect(e) {
+    const file = e.target.files?.[0]
+    if (!file || compressingImage) return
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
     }
-    
-    // Ultra fallback for extreme cases
-    const ultraFallbackOptions = {
-      maxSizeMB: 0.05,
-      maxWidthOrHeight: 400,
-      useWebWorker: true,
-      fileType: 'image/jpeg',
-      initialQuality: 0.25
+
+    setCompressingImage(true)
+    setError('Compressing image…')
+
+    try {
+      const base64 = await compressImageToBase64(file)
+      setAttachedImage(base64)
+      setError('')
+    } catch (err) {
+      setError('Failed to process image: ' + err.message)
+    } finally {
+      setCompressingImage(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
-    
-    imageCompression(file, primaryOptions)
-      .then((compressedFile) => {
-        const reader = new FileReader()
-        reader.onload = (event) => {
-          const base64 = event.target.result
-          // Check if base64 is still too large (rough estimate: 1.33x of file size)
-          if (base64.length > 1000000) {
-            // Fallback: compress more aggressively
-            setError('Recompressing image with higher compression...')
-            imageCompression(file, fallbackOptions)
-              .then((fallbackCompressed) => {
-                const fallbackReader = new FileReader()
-                fallbackReader.onload = (fallbackEvent) => {
-                  const fallbackBase64 = fallbackEvent.target.result
-                  // Check if still too large, use ultra fallback
-                  if (fallbackBase64.length > 600000) {
-                    setError('Applying final compression...')
-                    imageCompression(file, ultraFallbackOptions)
-                      .then((ultraCompressed) => {
-                        const ultraReader = new FileReader()
-                        ultraReader.onload = (ultraEvent) => {
-                          setAttachedImage(ultraEvent.target.result)
-                          setError('')
-                          setCompressingImage(false)
-                          if (fileInputRef.current) {
-                            fileInputRef.current.value = ''
-                          }
-                        }
-                        ultraReader.onerror = () => {
-                          setError('Failed to read image file')
-                          setCompressingImage(false)
-                          if (fileInputRef.current) {
-                            fileInputRef.current.value = ''
-                          }
-                        }
-                        ultraReader.readAsDataURL(ultraCompressed)
-                      })
-                      .catch((error) => {
-                        setError('Failed to compress image: ' + error.message)
-                        setCompressingImage(false)
-                        if (fileInputRef.current) {
-                          fileInputRef.current.value = ''
-                        }
-                      })
-                  } else {
-                    setAttachedImage(fallbackBase64)
-                    setError('')
-                    setCompressingImage(false)
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = ''
-                    }
-                  }
-                }
-                fallbackReader.onerror = () => {
-                  setError('Failed to read image file')
-                  setCompressingImage(false)
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = ''
-                  }
-                }
-                fallbackReader.readAsDataURL(fallbackCompressed)
-              })
-              .catch((error) => {
-                setError('Failed to compress image: ' + error.message)
-                setCompressingImage(false)
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = ''
-                }
-              })
-          } else {
-            setAttachedImage(base64)
-            setError('')
-            setCompressingImage(false)
-            if (fileInputRef.current) {
-              fileInputRef.current.value = ''
-            }
-          }
-        }
-        reader.onerror = () => {
-          setError('Failed to read image file')
-          setCompressingImage(false)
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-          }
-        }
-        reader.readAsDataURL(compressedFile)
-      })
-      .catch((error) => {
-        setError('Failed to compress image: ' + error.message)
-        setCompressingImage(false)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
-        }
-      })
   }
 
   function removeAttachedImage() {
     setAttachedImage(null)
     setCompressingImage(false)
     setError('')
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  // ── Send message with streaming ───────────────────────
   async function sendMessage() {
     if (!canSend) return
     setError('')
-    
-    // Build user message with optional image
+
     const userMsg = {
       role: 'user',
-      content: input.trim() || (attachedImage ? 'What\'s in this image?' : ''),
+      content: input.trim() || (attachedImage ? "What's in this image?" : ''),
       time: Date.now(),
       image: attachedImage || undefined
     }
-    
-    setMessages(prev => [...prev, userMsg])
+
+    const allMessages = [...messages, userMsg]
+    setMessages(allMessages)
     setInput('')
     setAttachedImage(null)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
     setLoading(true)
 
-    // allow cancel
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
 
+    // Streaming placeholder message
+    const aiMsgIndex = allMessages.length
+    const aiMsg = { role: 'assistant', content: '', time: Date.now(), isStreaming: true, streamDone: false }
+    setMessages(prev => [...prev, aiMsg])
+
+    const streamUrl = API_BASE_URL ? `${API_BASE_URL}/api/chat/stream` : '/api/chat/stream'
+    let accumulatedContent = ''
+
     try {
-      const res = await axios.post('/api/chat', {
-        messages: [...messages, userMsg],
-        temperature: settings.temperature,
-      }, { signal: controller.signal })
-      const fullContent = res.data?.content || 'No response'
-      const aiMsg = { role: 'assistant', content: fullContent, time: Date.now(), isTyping: true }
-      setMessages(prev => [...prev, aiMsg])
+      const res = await fetch(streamUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: allMessages, temperature: settings.temperature }),
+        signal: controller.signal,
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || `Request failed with status ${res.status}`)
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop()
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          if (trimmed === 'data: [DONE]') {
+            setMessages(prev => prev.map((m, i) =>
+              i === aiMsgIndex ? { ...m, content: accumulatedContent, isStreaming: true, streamDone: true } : m
+            ))
+            continue
+          }
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const payload = JSON.parse(trimmed.slice(6))
+              if (payload.error) throw new Error(payload.error)
+              if (typeof payload.token === 'string') {
+                accumulatedContent += payload.token
+                setMessages(prev => prev.map((m, i) =>
+                  i === aiMsgIndex ? { ...m, content: accumulatedContent } : m
+                ))
+              }
+            } catch (parseErr) {
+              if (parseErr.message !== 'Unexpected end of JSON input') {
+                throw parseErr
+              }
+            }
+          }
+        }
+      }
+
+      // Finalize message
+      setMessages(prev => prev.map((m, i) =>
+        i === aiMsgIndex ? { ...m, content: accumulatedContent, isStreaming: false, streamDone: true } : m
+      ))
     } catch (e) {
-      if (axios.isCancel?.(e)) {
+      if (e.name === 'AbortError') {
         setError('Request cancelled')
+        // Keep whatever we got so far
+        setMessages(prev => prev.map((m, i) =>
+          i === aiMsgIndex ? { ...m, isStreaming: false, streamDone: true } : m
+        ))
       } else {
-        const msg = e?.response?.data?.error || e?.message || 'Request failed'
-        setError(msg)
+        setError(e.message || 'Request failed')
+        // Remove placeholder if nothing was streamed
+        setMessages(prev => {
+          if (prev[aiMsgIndex]?.content === '') {
+            return prev.filter((_, i) => i !== aiMsgIndex)
+          }
+          return prev.map((m, i) => i === aiMsgIndex ? { ...m, isStreaming: false, streamDone: true } : m)
+        })
       }
     } finally {
       setLoading(false)
     }
   }
 
-  function handleSuggestionClick(text) {
+  const handleSuggestionClick = useCallback((text) => {
     if (!text) return
     setInput(text)
     setError('')
-    if (inputRef.current) {
-      inputRef.current.focus()
-    }
-  }
+    inputRef.current?.focus()
+  }, [])
 
   function regenerateLast() {
-    // resend the last user message
-    const lastUserIndex = [...messages].map(m=>m.role).lastIndexOf('user')
+    const lastUserIndex = [...messages].map(m => m.role).lastIndexOf('user')
     if (lastUserIndex === -1) return
     const base = messages.slice(0, lastUserIndex)
     const lastUser = messages[lastUserIndex]
-    setMessages(base) // drop any assistant after that
+    setMessages(base)
     setInput(lastUser.content)
   }
 
@@ -609,10 +708,7 @@ export default function App() {
     }
   }
 
-  function clearHistory() {
-    setMessages([])
-    setError('')
-  }
+  function clearHistory() { setMessages([]); setError('') }
 
   function newChat() {
     setMessages([])
@@ -620,293 +716,403 @@ export default function App() {
     setError('')
     setAttachedImage(null)
     setCompressingImage(false)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    setTimeout(() => inputRef.current?.focus(), 50)
   }
 
   function closeIntro() {
     setShowIntro(false)
     localStorage.setItem('alpha_has_seen_intro', 'true')
+    setTimeout(() => inputRef.current?.focus(), 150)
   }
 
   function stopRequest() {
-    try { abortRef.current?.abort() } catch {}
+    try { abortRef.current?.abort() } catch { }
   }
 
+  const healthDot =
+    healthy === false ? 'bg-rose-500' :
+      healthy === true ? 'bg-emerald-500' :
+        'bg-sand-400'
+
+  const charCount = input.length
+  const charOverLimit = charCount > MAX_INPUT_CHARS
+
   return (
-    <div className="w-full h-screen flex flex-col text-stone-900 overflow-hidden">
-      {showIntro && <AlphaIntro onClose={closeIntro} />}
-      <div className="w-full flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden">
-        {/* Sidebar */}
-        <aside className={
-          'backdrop-blur w-full md:w-80 md:flex-shrink-0 md:block border-r ' +
-          'bg-sand-100/80 border-sand-500/30 overflow-hidden flex flex-col ' +
-          (showSettings ? 'block' : 'hidden md:block')
-        }>
-          <div className="h-14 flex items-center justify-between px-4 border-b border-sand-500/30 flex-shrink-0">
-            <div className="font-semibold">Settings</div>
-            <button className="md:hidden text-stone-500" onClick={()=> setShowSettings(false)}>Close</button>
+    <ErrorBoundary>
+      <div
+        className={`w-full h-screen flex flex-col overflow-hidden text-white relative ${isDragOver ? 'drag-over-active' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="mesh-bg">
+          <div className="mesh-blob mesh-blob-1" />
+          <div className="mesh-blob mesh-blob-2" />
+        </div>
+        {showIntro && <AlphaIntro onClose={closeIntro} />}
+
+        {/* Drag overlay */}
+        {isDragOver && (
+          <div className="drag-overlay" aria-hidden>
+            <div className="drag-overlay-inner">
+              <div className="text-5xl mb-3">🖼️</div>
+              <div className="text-xl font-semibold text-white">Drop image to attach</div>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-5 nice-scrollbar">
-            <div>
-              <label className="text-xs font-medium text-stone-600">Temperature: {settings.temperature.toFixed(2)}</label>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={settings.temperature}
-                onChange={(e)=> setSettings(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
-                className="w-full accent-amber-600"
-              />
-            </div>
-            <button
-              className="w-full rounded-xl border px-3 py-2 text-sm bg-sand-100/80 hover:bg-sand-100 border-sand-500/30 shadow-soft"
-              onClick={clearHistory}
-            >Clear conversation</button>
-          </div>
-        </aside>
+        )}
 
-        {/* Main column */}
-        <div className="flex-1 flex flex-col min-w-0 h-full">
-          <header className="px-4 h-16 border-b backdrop-blur flex items-center justify-between flex-shrink-0 z-10 bg-sand-100/80 border-sand-500/30">
-            <div className="flex items-center gap-3">
-              <button className="md:hidden rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm" onClick={()=> setShowSettings(s=>!s)}>Settings</button>
-              <h1 className="text-lg md:text-xl font-bold tracking-tight flex items-center gap-2">
-                <span className="bg-gradient-to-r from-sage-600 to-amber-600 bg-clip-text text-transparent">Alpha</span>
-                <span className={"inline-block w-2 h-2 rounded-full animate-pulse " + (healthy === false ? 'bg-rose-500' : healthy === true ? 'bg-amber-600' : 'bg-sand-400')}/>
-              </h1>
+        <div className="w-full flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden">
+          {/* ── Sidebar ── */}
+          <aside
+            aria-label="Settings panel"
+            className={
+              'glass-sidebar w-full md:w-80 md:flex-shrink-0 md:block overflow-hidden flex flex-col relative z-20 ' +
+              (showSettings ? 'block' : 'hidden md:block')
+            }
+          >
+            <div className="h-14 flex items-center justify-between px-5 border-b border-[var(--border-glass)] flex-shrink-0">
+              <div className="font-semibold text-white tracking-tight">⚙️ Settings</div>
+              <button
+                aria-label="Close settings"
+                className="md:hidden text-stone-500 hover:text-stone-800 text-sm px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors"
+                onClick={() => setShowSettings(false)}
+              >
+                Close
+              </button>
             </div>
-            <div className="flex items-center gap-2">
-              {loading ? (
-                <button onClick={stopRequest} className="rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm">Stop</button>
-              ) : (
-                <button onClick={newChat} className="rounded-xl border px-3 py-1.5 text-sm bg-sand-100/80 border-sand-500/30 shadow-sm">New chat</button>
-              )}
-            </div>
-          </header>
-
-          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 md:space-y-5 nice-scrollbar">
-              {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                  <div className="mb-6">
-                    <div className="text-6xl md:text-7xl font-bold text-sage-600 mb-2 tracking-tight">ALPHA</div>
-                    <div className="text-stone-400 text-sm">Your intelligent AI assistant</div>
-                  </div>
-                  <div className="text-stone-500 max-w-md space-y-2">
-                    <p className="text-base">Ask me anything, or upload an image to get started!</p>
-                    <div className="flex items-center justify-center gap-4 mt-4 text-xs text-stone-400">
-                      <div className="flex items-center gap-1">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        Upload images
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                        </svg>
-                        Ask questions
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {messages.map((m, idx) => (
-                <MessageBubble
-                  key={idx}
-                  role={m.role}
-                  content={m.content}
-                  time={m.time}
-                  image={m.image}
-                  isTyping={m.isTyping}
-                  onTypingComplete={m.isTyping ? () => {
-                    setMessages(prev => prev.map((msg, i) => 
-                      i === idx ? { ...msg, isTyping: false } : msg
-                    ))
-                  } : undefined}
-                />
-              ))}
-              {!loading && messages.length > 0 && messages[messages.length-1]?.role === 'assistant' && (
-                <div className="flex flex-col items-center md:items-start gap-2">
-                  <div className="flex justify-center w-full">
-                    <button onClick={regenerateLast} className="text-xs rounded-xl border px-3 py-1.5 bg-sand-100/80 border-sand-500/30 shadow-sm">Regenerate response</button>
-                  </div>
-                  {followUpSuggestions.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-center md:justify-start w-full">
-                      {followUpSuggestions.map((s, idx) => (
-                        <button
-                          key={idx}
-                          onClick={()=> handleSuggestionClick(s)}
-                          className="text-xs md:text-sm rounded-full border px-3 py-1.5 bg-sand-100/80 border-sand-500/30 shadow-sm hover:bg-sand-100"
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-sand-50 border border-sand-500/30 text-stone-900 max-w-[85%] rounded-2xl px-4 py-3 shadow-soft">
-                    <span className="inline-flex gap-1 items-center">
-                      <span className="w-2 h-2 bg-sand-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                      <span className="w-2 h-2 bg-sand-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                      <span className="w-2 h-2 bg-sand-500 rounded-full animate-bounce"></span>
-                    </span>
-                  </div>
-                </div>
-              )}
-              {error && (
-                <div className="flex justify-center">
-                  <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-md px-3 py-2 text-sm">
-                    {error}
-                  </div>
-                </div>
-              )}
-            </div>
-          </main>
-
-          <footer className="border-t bg-sand-100/80 backdrop-blur px-3 md:px-6 py-3 md:py-4 flex-shrink-0 safe-area-bottom border-sand-500/30 space-y-2">
-            {attachedImage && (
-              <div className="relative inline-block">
-                <div className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-sage-500/50">
-                  <img src={attachedImage} alt="Attached" className="w-full h-full object-cover" />
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 nice-scrollbar">
+              {/* Theme Toggle */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-stone-600 uppercase tracking-wide">
+                  Theme
+                </label>
+                <div className="flex bg-black/20 rounded-lg p-1">
                   <button
-                    onClick={removeAttachedImage}
-                    className="absolute top-1 right-1 bg-rose-500 hover:bg-rose-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-md"
-                    title="Remove image"
+                    onClick={() => setTheme('dark')}
+                    className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all ${theme === 'dark' ? 'bg-white/20 text-white shadow-sm' : 'text-stone-400 hover:text-stone-200'}`}
                   >
-                    ×
+                    Dark
+                  </button>
+                  <button
+                    onClick={() => setTheme('light')}
+                    className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all ${theme === 'light' ? 'bg-white/90 text-black shadow-sm' : 'text-stone-400 hover:text-stone-200'}`}
+                  >
+                    Light
                   </button>
                 </div>
               </div>
-            )}
-            <div className="flex items-end gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                capture="environment"
-                onChange={handleImageSelect}
-                className="hidden"
-                id="image-upload"
-              />
-              <label
-                htmlFor="image-upload"
-                className="h-[44px] md:h-[48px] w-[44px] md:w-[48px] flex items-center justify-center rounded-xl border border-sand-500/30 bg-sand-100/80 hover:bg-sand-100 cursor-pointer shadow-sm transition-colors active:scale-95 flex-shrink-0"
-                title="Attach image or take photo"
+
+              {/* Temperature */}
+              <div className="space-y-2">
+                <label htmlFor="temp-range" className="text-xs font-semibold text-stone-600 uppercase tracking-wide">
+                  Temperature <span className="font-bold text-sage-700">{settings.temperature.toFixed(2)}</span>
+                </label>
+                <input
+                  id="temp-range"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={settings.temperature}
+                  onChange={(e) => setSettings(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
+                  className="w-full accent-amber-600 h-1.5"
+                  aria-label="Temperature control"
+                />
+                <div className="flex justify-between text-[10px] text-stone-400">
+                  <span>Precise</span>
+                  <span>Creative</span>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1.5">
+                <div className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Backend Status</div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`w-2 h-2 rounded-full ${healthDot} animate-pulse`} />
+                  <span className="text-stone-600">
+                    {healthy === true ? 'Connected' : healthy === false ? 'Disconnected' : 'Checking…'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Keyboard shortcuts */}
+              <div className="space-y-1.5">
+                <div className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Keyboard Shortcuts</div>
+                <div className="space-y-1.5 text-xs text-stone-500">
+                  <div className="flex justify-between items-center">
+                    <span>Send message</span>
+                    <kbd className="kbd-tag">Enter</kbd>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>New line</span>
+                    <kbd className="kbd-tag">Shift + Enter</kbd>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>New chat</span>
+                    <kbd className="kbd-tag">Ctrl + K</kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-stone-200">
+                <button
+                  aria-label="Clear conversation history"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm font-medium glass-button text-rose-400 hover:text-rose-300 shadow-sm transition-colors"
+                  onClick={clearHistory}
+                >
+                  🗑️ Clear conversation
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          {/* ── Main column ── */}
+          <div className="flex-1 flex flex-col min-w-0 h-full relative">
+            {/* Header */}
+            <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-panel flex items-center justify-between flex-shrink-0 z-10">
+              <div className="flex items-center gap-3">
+                <button
+                  aria-label="Open settings"
+                  className="md:hidden rounded-xl border px-3 py-1.5 text-sm font-medium glass-button text-white transition-colors"
+                  onClick={() => setShowSettings(s => !s)}
+                >
+                  ⚙️
+                </button>
+                <h1 className="text-lg md:text-xl font-bold tracking-tight flex items-center gap-2 drop-shadow-[0_2px_10px_rgba(0,240,255,0.3)]">
+                  <span className="alpha-gradient-text contrast-125">
+                    Alpha
+                  </span>
+                  <span
+                    aria-label={healthy === true ? 'Backend online' : healthy === false ? 'Backend offline' : 'Checking connection'}
+                    className={`inline-block w-2 h-2 rounded-full ${healthDot} animate-pulse`}
+                  />
+                </h1>
+              </div>
+              <div className="flex items-center gap-2">
+                {loading ? (
+                  <button
+                    onClick={stopRequest}
+                    aria-label="Stop generating"
+                    className="rounded-xl px-3 py-1.5 text-sm font-medium glass-button text-rose-400 hover:text-rose-300 transition-colors"
+                  >
+                    ⬛ Stop
+                  </button>
+                ) : (
+                  <button
+                    onClick={newChat}
+                    aria-label="Start new chat"
+                    className="rounded-xl px-3 py-1.5 text-sm font-medium glass-button text-white transition-colors"
+                  >
+                    ✏️ New chat
+                  </button>
+                )}
+              </div>
+            </header>
+
+            {/* Messages */}
+            <main className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
+              <div
+                ref={containerRef}
+                className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 nice-scrollbar"
+                aria-label="Chat messages"
+                aria-live="polite"
               >
-                <svg className="w-5 h-5 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </label>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e)=> setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder={attachedImage ? "Ask about the image…" : "Send a message…"}
-                rows={1}
-                className="flex-1 resize-none max-h-40 min-h-[44px] rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 bg-sand-100/80 md:min-h-[48px] placeholder:text-stone-400 border-sand-500/30 focus:ring-sage-500/40 min-w-0"
+                {/* Empty state */}
+                {messages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-6 drop-shadow-xl z-10 relative">
+                    <div>
+                      <div className="text-6xl md:text-8xl font-black alpha-gradient-text mb-2 tracking-tighter">
+                        ALPHA
+                      </div>
+                      <div className="text-stone-300 text-sm font-medium">Your intelligent AI assistant</div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg w-full">
+                      {[
+                        { icon: '💡', title: 'Ask anything', sub: 'Questions, ideas, explanations' },
+                        { icon: '🖼️', title: 'Analyze images', sub: 'Upload photos for vision AI' },
+                        { icon: '💻', title: 'Write code', sub: 'Debug, explain, and generate' },
+                        { icon: '📝', title: 'Draft content', sub: 'Emails, essays, summaries' },
+                      ].map(({ icon, title, sub }) => (
+                        <button
+                          key={title}
+                          onClick={() => {
+                            const prompt = STARTER_PROMPTS[title]
+                            if (prompt) {
+                              setInput(prompt)
+                              inputRef.current?.focus()
+                            }
+                          }}
+                          className="flex items-start gap-3 p-3.5 rounded-2xl glass-button text-left transition-all cursor-pointer active:scale-[0.98] group"
+                        >
+                          <span className="text-xl group-hover:scale-110 transition-transform">{icon}</span>
+                          <div>
+                            <div className="text-sm font-semibold text-white">{title}</div>
+                            <div className="text-xs text-stone-400 mt-0.5">{sub}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-sm text-stone-400">Click a card or type a message · drag an image to attach</p>
+                  </div>
+                )}
+
+                {/* Messages */}
+                {messages.map((m, idx) => (
+                  <MessageBubble
+                    key={idx}
+                    role={m.role}
+                    content={m.content}
+                    time={m.time}
+                    image={m.image}
+                    isStreaming={m.isStreaming}
+                    streamDone={m.streamDone}
+                  />
+                ))}
+
+                {/* Regenerate + follow-up suggestions */}
+                {!loading && messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.isStreaming && (
+                  <div className="flex flex-col items-center md:items-start gap-2.5">
+                    <div className="flex justify-center w-full">
+                      <button
+                        onClick={regenerateLast}
+                        aria-label="Regenerate last response"
+                        className="text-xs rounded-xl px-3 py-1.5 glass-button text-stone-300 hover:text-white transition-colors"
+                      >
+                        🔄 Regenerate response
+                      </button>
+                    </div>
+                    {followUpSuggestions.length > 0 && (
+                      <div className="flex flex-wrap gap-2 justify-center md:justify-start w-full">
+                        {followUpSuggestions.map((s, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleSuggestionClick(s)}
+                            aria-label={`Ask: ${s}`}
+                            className="text-xs md:text-sm rounded-full px-3.5 py-1.5 glass-button text-stone-300 hover:text-white transition-all"
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Thinking shimmer */}
+                {loading && messages[messages.length - 1]?.content === '' && (
+                  <ThinkingBubble />
+                )}
+
+                {/* Error message */}
+                {error && (
+                  <div className="flex justify-center" role="alert">
+                    <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-2.5 text-sm flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>{error}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Scroll-to-bottom FAB */}
+              <ScrollToBottomFAB
+                visible={showScrollFAB}
+                onClick={() => scrollToBottom('smooth')}
               />
-              <button
-                onClick={sendMessage}
-                disabled={!canSend}
-                className="h-[44px] md:h-[48px] px-4 rounded-xl bg-sage-600 hover:bg-sage-500 text-white disabled:opacity-50 disabled:cursor-not-allowed shadow-soft flex-shrink-0"
-              >Send</button>
-            </div>
-            <div className="text-[11px] text-stone-500 leading-tight px-0.5">Enter to send. Shift+Enter for new line. Click camera icon to attach image.</div>
-          </footer>
-        </div>
-      </div>
-    </div>
-  )
-}
+            </main>
 
-function TypingContent({ fullContent, onComplete }) {
-  const [visibleLength, setVisibleLength] = useState(0)
-  const onCompleteRef = useRef(onComplete)
-  onCompleteRef.current = onComplete
-  const fullLen = fullContent.length
-  const TYPING_SPEED_MS = 12
-  const CHUNK_SIZE = 2
+            {/* Footer / Input area */}
+            <footer
+              aria-label="Message input"
+              className="border-t border-[var(--border-glass)] glass-panel px-4 md:px-8 py-4 flex-shrink-0 safe-area-bottom space-y-3 z-10"
+            >
+              {/* Image preview */}
+              {attachedImage && (
+                <div className="relative inline-block">
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-sage-400/50 shadow-soft">
+                    <img src={attachedImage} alt="Attached preview" className="w-full h-full object-cover" />
+                    <button
+                      onClick={removeAttachedImage}
+                      aria-label="Remove attached image"
+                      className="absolute top-1 right-1 bg-rose-500 hover:bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md transition-colors"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              )}
 
-  useEffect(() => {
-    if (visibleLength >= fullLen) {
-      onCompleteRef.current?.()
-      return
-    }
-    const t = setTimeout(() => {
-      setVisibleLength(prev => Math.min(prev + CHUNK_SIZE, fullLen))
-    }, TYPING_SPEED_MS)
-    return () => clearTimeout(t)
-  }, [visibleLength, fullLen])
+              <div className="flex items-end gap-2">
+                {/* Hidden file input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                  id="image-upload"
+                  aria-label="Upload image"
+                />
+                {/* Camera / upload button */}
+                <label
+                  htmlFor="image-upload"
+                  aria-label="Attach image"
+                  title="Attach image or take photo"
+                  className={`glass-button min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl cursor-pointer shadow-sm transition-colors active:scale-95 flex-shrink-0 ${compressingImage ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  {compressingImage ? (
+                    <svg className="w-5 h-5 text-sage-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </label>
 
-  const visibleContent = fullContent.slice(0, visibleLength)
-  const isComplete = visibleLength >= fullLen
+                {/* Text input */}
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder={attachedImage ? 'Ask about the image…' : 'Send a message…'}
+                  rows={1}
+                  maxLength={MAX_INPUT_CHARS + 500}
+                  aria-label="Message input"
+                  className={`glass-input flex-1 resize-none max-h-40 min-h-[48px] rounded-2xl px-4 py-3 md:py-3.5 focus:outline-none placeholder:text-stone-500 min-w-0 text-sm md:text-base leading-relaxed ${charOverLimit ? 'border-rose-400 focus:ring-rose-400/40 focus:border-rose-400' : ''}`}
+                />
 
-  return (
-    <div className="typing-response">
-      <div className="prose prose-stone max-w-none min-w-0 overflow-hidden prose-a:text-sage-600 prose-strong:text-stone-900 prose-code:bg-sand-100 prose-code:px-1 prose-code:py-0.5 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-pre:my-3 prose-code:before:content-[''] prose-code:after:content-[''] text-sm md:text-base markdown-math">
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeMathDelimiters(visibleContent)}</ReactMarkdown>
-      </div>
-      {!isComplete && <span className="typing-cursor" aria-hidden>|</span>}
-    </div>
-  )
-}
+                {/* Send button */}
+                <button
+                  onClick={sendMessage}
+                  disabled={!canSend || charOverLimit}
+                  aria-label="Send message"
+                  className="send-btn relative min-h-[44px] md:min-h-[48px] px-4 md:px-5 rounded-xl hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed shadow-glow flex-shrink-0 font-medium text-sm transition-all active:scale-95 overflow-hidden"
+                >
+                  <span className="relative z-10">Send</span>
+                  <div className="send-btn-pulse" />
+                </button>
+              </div>
 
-function MessageBubble({ role, content, time, image, isTyping, onTypingComplete }) {
-  const isUser = role === 'user'
-  async function copyText() {
-    try {
-      await navigator.clipboard.writeText(content)
-    } catch {}
-  }
-
-  const showTypingAnimation = !isUser && isTyping && typeof content === 'string'
-
-  return (
-    <div className={isUser ? 'flex justify-end' : 'flex justify-start'} style={{ minWidth: 0 }}>
-      <div className={'flex max-w-[90%] md:max-w-[75%] min-w-0 gap-3 items-start'}>
-        {!isUser && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sage-600 text-white shrink-0">AI</div>
-        )}
-        <div className={
-          'rounded-2xl px-4 py-3 shadow-soft relative group min-w-0 overflow-hidden ' +
-          (isUser ? 'bg-sage-600 text-white' : 'bg-sand-50 border border-sand-500/30 text-stone-900')
-        }>
-          {image && (
-            <div className="mb-2 rounded-lg overflow-hidden max-w-sm">
-              <img src={image} alt="User uploaded" className="w-full h-auto max-h-64 object-contain" />
-            </div>
-          )}
-          {isUser ? (
-            <div className="whitespace-pre-wrap break-words text-sm md:text-base">{content}</div>
-          ) : showTypingAnimation ? (
-            <TypingContent fullContent={content} onComplete={onTypingComplete} />
-          ) : (
-            <div className="prose prose-stone max-w-none min-w-0 overflow-hidden prose-a:text-sage-600 prose-strong:text-stone-900 prose-code:bg-sand-100 prose-code:px-1 prose-code:py-0.5 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-pre:my-3 prose-code:before:content-[''] prose-code:after:content-[''] text-sm md:text-base markdown-math">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeMathDelimiters(content)}</ReactMarkdown>
-            </div>
-          )}
-          {!isUser && !showTypingAnimation && (
-            <button onClick={copyText} className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 -right-2 text-xs bg-stone-800 text-white rounded px-2 py-1">Copy</button>
-          )}
-          <div className={(isUser ? 'text-white/60' : 'text-stone-400') + ' text-[10px] mt-1 select-none'}>
-            {time ? new Date(time).toLocaleTimeString() : ''}
+              {/* Character counter + hint */}
+              <div className="flex items-center justify-between px-0.5">
+                <div className="text-[11px] text-stone-400 leading-tight">
+                  Enter ↵ to send · Shift+Enter for new line
+                </div>
+                <div className={`text-[11px] leading-tight font-mono ${charOverLimit ? 'text-rose-500 font-semibold' : charCount > MAX_INPUT_CHARS * 0.85 ? 'text-amber-500' : 'text-stone-400'}`}>
+                  {charCount} / {MAX_INPUT_CHARS}
+                </div>
+              </div>
+            </footer>
           </div>
         </div>
-        {isUser && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-800 text-white shrink-0">U</div>
-        )}
       </div>
-    </div>
+    </ErrorBoundary>
   )
 }
-
-
