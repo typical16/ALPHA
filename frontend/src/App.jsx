@@ -257,13 +257,68 @@ async function compressImageToBase64(file) {
   throw new Error('Image could not be compressed to an acceptable size')
 }
 
+function triggerHaptic(pattern) {
+  try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(pattern) } catch {}
+}
+
+const MarkdownComponents = {
+  code({ node, inline, className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || '')
+    const language = match ? match[1] : ''
+    
+    if (!inline) {
+      return (
+        <div className="rounded-xl overflow-hidden my-4 border border-[var(--border-glass)] shadow-lg bg-[#0B0E14] code-block-premium">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-white/5 border-b border-[var(--border-glass)]">
+            <div className="flex gap-1.5 items-center">
+              <div className="w-3 h-3 rounded-full bg-[#FF5F56] shadow-[0_0_5px_rgba(255,95,86,0.3)]" />
+              <div className="w-3 h-3 rounded-full bg-[#FFBD2E] shadow-[0_0_5px_rgba(255,189,46,0.3)]" />
+              <div className="w-3 h-3 rounded-full bg-[#27C93F] shadow-[0_0_5px_rgba(39,201,63,0.3)]" />
+            </div>
+            {language && <div className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest">{language}</div>}
+            <button
+              onClick={(e) => {
+                const btn = e.currentTarget
+                try {
+                  navigator.clipboard.writeText(String(children).replace(/\n$/, ''))
+                  triggerHaptic(15)
+                  btn.textContent = "Copied!"
+                  btn.classList.add("text-[#00F0FF]")
+                  setTimeout(() => {
+                    btn.textContent = "Copy"
+                    btn.classList.remove("text-[#00F0FF]")
+                  }, 2000)
+                } catch {}
+              }}
+              className="text-xs font-medium text-stone-400 hover:text-white transition-colors cursor-pointer"
+              title="Copy code"
+            >
+              Copy
+            </button>
+          </div>
+          <div className="p-4 overflow-x-auto text-[13px] leading-relaxed">
+            <code className={className} {...props}>
+              {children}
+            </code>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    )
+  }
+}
+
 // ── Streaming message display ─────────────────────────────
 // Shows content as it streams in, with a blinking cursor
 function StreamingContent({ content, done }) {
   return (
-    <div className="streaming-response">
-      <div className="prose max-w-none min-w-0 overflow-hidden prose-a:text-[#00F0FF] prose-strong:text-[var(--text-primary)] prose-code:bg-black/10 prose-code:px-1 prose-code:py-0.5 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-1 prose-pre:my-2 prose-code:before:content-[''] prose-code:after:content-[''] text-sm markdown-math text-[var(--text-primary)]">
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+    <div className={`streaming-response ${!done ? 'glow-pulse' : ''}`}>
+      <div className="prose max-w-none min-w-0 overflow-hidden prose-a:text-[#00F0FF] prose-strong:text-[var(--text-primary)] prose-code:bg-black/10 prose-code:px-1 prose-code:py-0.5 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-1 prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0 prose-code:before:content-[''] prose-code:after:content-[''] text-sm markdown-math text-[var(--text-primary)]">
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={MarkdownComponents}>
           {normalizeMathDelimiters(content)}
         </ReactMarkdown>
       </div>
@@ -281,6 +336,7 @@ const MessageBubble = memo(function MessageBubble({ role, content, time, image, 
     try {
       await navigator.clipboard.writeText(content)
       setCopyState('copied')
+      triggerHaptic(15)
       setTimeout(() => setCopyState('idle'), 2000)
     } catch { }
   }, [content])
@@ -312,8 +368,8 @@ const MessageBubble = memo(function MessageBubble({ role, content, time, image, 
           ) : isStreaming ? (
             <StreamingContent content={content} done={streamDone} />
           ) : (
-            <div className="prose max-w-none min-w-0 overflow-hidden prose-a:text-[#00F0FF] prose-strong:text-[var(--text-primary)] prose-code:bg-black/10 prose-code:px-1 prose-code:py-0.5 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-1 prose-pre:my-2 prose-code:before:content-[''] prose-code:after:content-[''] text-sm markdown-math text-[var(--text-primary)]">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+            <div className="prose max-w-none min-w-0 overflow-hidden prose-a:text-[#00F0FF] prose-strong:text-[var(--text-primary)] prose-code:bg-black/10 prose-code:px-1 prose-code:py-0.5 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-1 prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0 prose-code:before:content-[''] prose-code:after:content-[''] text-sm markdown-math text-[var(--text-primary)]">
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={MarkdownComponents}>
                 {normalizeMathDelimiters(content)}
               </ReactMarkdown>
             </div>
@@ -591,6 +647,7 @@ export default function App() {
     setMessages(allMessages)
     setInput('')
     setAttachedImage(null)
+    triggerHaptic(10)
     if (fileInputRef.current) fileInputRef.current.value = ''
     setLoading(true)
 
@@ -762,21 +819,26 @@ export default function App() {
           </div>
         )}
 
-        <div className="w-full flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden">
+        <div className="w-full flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden relative">
+          
+          {/* Mobile Settings Overlay */}
+          <div 
+            className={`md:hidden fixed inset-0 z-20 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            onClick={() => { setShowSettings(false); triggerHaptic([5, 10]); }}
+            aria-hidden="true"
+          />
+
           {/* ── Sidebar ── */}
           <aside
             aria-label="Settings panel"
-            className={
-              'glass-sidebar w-full flex-1 md:flex-none md:w-80 md:flex-shrink-0 overflow-hidden flex-col relative z-20 ' +
-              (showSettings ? 'flex' : 'hidden md:flex')
-            }
+            className={`glass-sidebar absolute md:relative h-full w-[80%] max-w-sm md:w-80 md:flex-shrink-0 overflow-hidden flex flex-col z-30 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${showSettings ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
           >
             <div className="h-14 flex items-center justify-between px-5 border-b border-[var(--border-glass)] flex-shrink-0">
               <div className="font-semibold text-white tracking-tight">⚙️ Settings</div>
               <button
                 aria-label="Close settings"
                 className="md:hidden text-stone-500 hover:text-stone-800 text-sm px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors"
-                onClick={() => setShowSettings(false)}
+                onClick={() => { setShowSettings(false); triggerHaptic(5); }}
               >
                 Close
               </button>
@@ -868,14 +930,14 @@ export default function App() {
           </aside>
 
           {/* ── Main column ── */}
-          <div className={`flex-1 flex-col min-w-0 h-full relative ${showSettings ? 'hidden md:flex' : 'flex'}`}>
+          <div className="flex-1 flex flex-col min-w-0 h-full relative">
             {/* Header */}
-            <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-panel flex items-center justify-between flex-shrink-0 z-10">
+            <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-panel flex items-center justify-between flex-shrink-0 z-10 relative">
               <div className="flex items-center gap-3">
                 <button
                   aria-label="Open settings"
                   className="md:hidden rounded-xl border px-3 py-1.5 text-sm font-medium glass-button text-white transition-colors"
-                  onClick={() => setShowSettings(s => !s)}
+                  onClick={() => { setShowSettings(true); triggerHaptic(5); }}
                 >
                   ⚙️
                 </button>
@@ -933,17 +995,19 @@ export default function App() {
                         { icon: '🖼️', title: 'Analyze images', sub: 'Upload photos for vision AI' },
                         { icon: '💻', title: 'Write code', sub: 'Debug, explain, and generate' },
                         { icon: '📝', title: 'Draft content', sub: 'Emails, essays, summaries' },
-                      ].map(({ icon, title, sub }) => (
+                      ].map(({ icon, title, sub }, i) => (
                         <button
                           key={title}
                           onClick={() => {
                             const prompt = STARTER_PROMPTS[title]
                             if (prompt) {
                               setInput(prompt)
+                              triggerHaptic(10)
                               inputRef.current?.focus()
                             }
                           }}
-                          className="flex items-start gap-3 p-3.5 rounded-2xl glass-button text-left transition-all cursor-pointer active:scale-[0.98] group"
+                          className="stagger-enter flex items-start gap-3 p-3.5 rounded-2xl glass-button text-left transition-all cursor-pointer active:scale-[0.98] group"
+                          style={{ animationDelay: `${i * 100}ms` }}
                         >
                           <span className="text-xl group-hover:scale-110 transition-transform">{icon}</span>
                           <div>
