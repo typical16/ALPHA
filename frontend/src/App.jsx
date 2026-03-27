@@ -477,11 +477,14 @@ export default function App() {
   })
   const [isDragOver, setIsDragOver] = useState(false)
   const [showScrollFAB, setShowScrollFAB] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [speechSupported, setSpeechSupported] = useState(false)
 
   const containerRef = useRef(null)
   const inputRef = useRef(null)
   const abortRef = useRef(null)
   const fileInputRef = useRef(null)
+  const recognitionRef = useRef(null)
   const [healthy, setHealthy] = useState(null)
 
   // Sync theme class to root
@@ -552,6 +555,68 @@ export default function App() {
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [showIntro])
+
+  // Detect Speech API support
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    setSpeechSupported(!!SpeechRecognition)
+  }, [])
+
+  // Toggle voice input
+  const toggleVoiceInput = useCallback(() => {
+    if (isListening) {
+      // Stop listening
+      try { recognitionRef.current?.stop() } catch {}
+      recognitionRef.current = null
+      setIsListening(false)
+      return
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+
+    let finalTranscript = ''
+
+    recognition.onresult = (event) => {
+      let interim = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' '
+          setInput(prev => {
+            const newVal = prev + transcript + ' '
+            return newVal.slice(0, MAX_INPUT_CHARS)
+          })
+        } else {
+          interim = transcript
+        }
+      }
+    }
+
+    recognition.onerror = (event) => {
+      console.warn('[Voice] error:', event.error)
+      setIsListening(false)
+      recognitionRef.current = null
+      if (event.error === 'not-allowed') {
+        setError('Microphone access denied. Please allow microphone permission.')
+      }
+    }
+
+    recognition.onend = () => {
+      setIsListening(false)
+      recognitionRef.current = null
+    }
+
+    recognitionRef.current = recognition
+    recognition.start()
+    setIsListening(true)
+    triggerHaptic(15)
+  }, [isListening])
 
   const canSend = useMemo(() => (input.trim().length > 0 || attachedImage) && !loading, [input, attachedImage, loading])
 
@@ -634,6 +699,12 @@ export default function App() {
   // ── Send message with streaming ───────────────────────
   async function sendMessage() {
     if (!canSend) return
+    // Auto-stop voice recording when sending
+    if (isListening) {
+      try { recognitionRef.current?.stop() } catch {}
+      recognitionRef.current = null
+      setIsListening(false)
+    }
     setError('')
 
     const userMsg = {
@@ -932,7 +1003,7 @@ export default function App() {
           {/* ── Main column ── */}
           <div className="flex-1 flex flex-col min-w-0 h-full relative">
             {/* Header */}
-            <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-panel flex items-center justify-between flex-shrink-0 z-10 relative">
+            <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-header flex items-center justify-between flex-shrink-0 z-10 relative">
               <div className="flex items-center gap-3">
                 <button
                   aria-label="Open settings"
@@ -1071,7 +1142,7 @@ export default function App() {
                 {/* Error message */}
                 {error && (
                   <div className="flex justify-center" role="alert">
-                    <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-2.5 text-sm flex items-center gap-2">
+                    <div className="glass-error flex items-center gap-2">
                       <span>⚠️</span>
                       <span>{error}</span>
                     </div>
@@ -1089,17 +1160,17 @@ export default function App() {
             {/* Footer / Input area */}
             <footer
               aria-label="Message input"
-              className="border-t border-[var(--border-glass)] glass-panel px-4 md:px-8 py-4 flex-shrink-0 safe-area-bottom space-y-3 z-10"
+              className="border-t border-[var(--border-glass)] glass-footer px-3 md:px-6 py-2 md:py-3 flex-shrink-0 safe-area-bottom space-y-1.5 z-10"
             >
               {/* Image preview */}
               {attachedImage && (
                 <div className="relative inline-block">
-                  <div className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-sage-400/50 shadow-soft">
+                  <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-xl overflow-hidden border border-[var(--border-glass)] shadow-soft">
                     <img src={attachedImage} alt="Attached preview" className="w-full h-full object-cover" />
                     <button
                       onClick={removeAttachedImage}
                       aria-label="Remove attached image"
-                      className="absolute top-1 right-1 bg-rose-500 hover:bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md transition-colors"
+                      className="absolute top-0.5 right-0.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow-md transition-colors"
                     >
                       ×
                     </button>
@@ -1107,7 +1178,8 @@ export default function App() {
                 </div>
               )}
 
-              <div className="flex items-end gap-2">
+              {/* Unified input bar — icons inside */}
+              <div className={`input-bar-wrapper ${charOverLimit ? 'input-bar-error' : ''} ${isListening ? 'input-bar-recording' : ''}`}>
                 {/* Hidden file input */}
                 <input
                   type="file"
@@ -1119,58 +1191,82 @@ export default function App() {
                   id="image-upload"
                   aria-label="Upload image"
                 />
-                {/* Camera / upload button */}
-                <label
-                  htmlFor="image-upload"
-                  aria-label="Attach image"
-                  title="Attach image or take photo"
-                  className={`glass-button min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl cursor-pointer shadow-sm transition-colors active:scale-95 flex-shrink-0 ${compressingImage ? 'opacity-60 cursor-not-allowed' : ''}`}
-                >
-                  {compressingImage ? (
-                    <svg className="w-5 h-5 text-sage-600 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  )}
-                </label>
 
-                {/* Text input */}
+                {/* Left action buttons */}
+                <div className="flex items-center gap-0.5 pl-1.5 flex-shrink-0">
+                  {/* Camera / upload button */}
+                  <label
+                    htmlFor="image-upload"
+                    aria-label="Attach image"
+                    title="Attach image or take photo"
+                    className={`input-bar-btn cursor-pointer ${compressingImage ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {compressingImage ? (
+                      <svg className="w-[18px] h-[18px] animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    )}
+                  </label>
+
+                  {/* Voice input button */}
+                  {speechSupported && (
+                    <button
+                      onClick={toggleVoiceInput}
+                      aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+                      title={isListening ? 'Stop listening' : 'Voice input'}
+                      className={`input-bar-btn ${isListening ? 'input-bar-btn-recording' : ''}`}
+                    >
+                      {isListening && <span className="input-bar-pulse" aria-hidden />}
+                      <svg className="w-[18px] h-[18px] relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11a7 7 0 01-14 0m7 7v4m-4 0h8m-4-12a3 3 0 00-3 3v4a3 3 0 006 0v-4a3 3 0 00-3-3z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Textarea */}
                 <textarea
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={onKeyDown}
-                  placeholder={attachedImage ? 'Ask about the image…' : 'Send a message…'}
+                  placeholder={attachedImage ? 'Ask about the image…' : 'Message Alpha…'}
                   rows={1}
                   maxLength={MAX_INPUT_CHARS + 500}
                   aria-label="Message input"
-                  className={`glass-input flex-1 resize-none max-h-40 min-h-[48px] rounded-2xl px-4 py-3 md:py-3.5 focus:outline-none placeholder:text-stone-500 min-w-0 text-sm md:text-base leading-relaxed ${charOverLimit ? 'border-rose-400 focus:ring-rose-400/40 focus:border-rose-400' : ''}`}
+                  className="input-bar-textarea"
                 />
 
-                {/* Send button */}
-                <button
-                  onClick={sendMessage}
-                  disabled={!canSend || charOverLimit}
-                  aria-label="Send message"
-                  className="send-btn relative min-h-[44px] md:min-h-[48px] px-4 md:px-5 rounded-xl hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed shadow-glow flex-shrink-0 font-medium text-sm transition-all active:scale-95 overflow-hidden"
-                >
-                  <span className="relative z-10">Send</span>
-                  <div className="send-btn-pulse" />
-                </button>
+                {/* Right side — char count + send */}
+                <div className="flex items-center gap-1.5 pr-1.5 flex-shrink-0">
+                  {charCount > MAX_INPUT_CHARS * 0.85 && (
+                    <span className={`text-[10px] font-mono leading-none ${charOverLimit ? 'text-rose-500 font-bold' : 'text-amber-500'}`}>
+                      {charCount}/{MAX_INPUT_CHARS}
+                    </span>
+                  )}
+                  <button
+                    onClick={sendMessage}
+                    disabled={!canSend || charOverLimit}
+                    aria-label="Send message"
+                    className="input-bar-send"
+                  >
+                    <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
-              {/* Character counter + hint */}
-              <div className="flex items-center justify-between px-0.5">
-                <div className="text-[11px] text-stone-400 leading-tight">
+              {/* Desktop hint */}
+              <div className="hidden md:flex items-center justify-center px-0.5">
+                <div className="text-[10px] text-stone-500 leading-tight">
                   Enter ↵ to send · Shift+Enter for new line
-                </div>
-                <div className={`text-[11px] leading-tight font-mono ${charOverLimit ? 'text-rose-500 font-semibold' : charCount > MAX_INPUT_CHARS * 0.85 ? 'text-amber-500' : 'text-stone-400'}`}>
-                  {charCount} / {MAX_INPUT_CHARS}
                 </div>
               </div>
             </footer>

@@ -5,9 +5,11 @@
 @layer base {
   :root {
     --bg-base: #0B0E14;
-    --bg-surface: #151A22;
-    --bg-glass: rgba(21, 26, 34, 0.65);
-    --bg-sidebar: rgba(11, 14, 20, 0.4);
+    --bg-surface: rgba(21, 26, 34, 0.55);
+    --bg-glass: rgba(21, 26, 34, 0.45);
+    --bg-sidebar: rgba(11, 14, 20, 0.35);
+    --bg-header: rgba(15, 19, 27, 0.5);
+    --bg-toolbar: rgba(255, 255, 255, 0.04);
     --border-glass: rgba(255, 255, 255, 0.08);
 
     --accent-primary: #00F0FF;
@@ -37,9 +39,11 @@
 
   :root.light {
     --bg-base: #F8FAFC;
-    --bg-surface: #FFFFFF;
-    --bg-glass: rgba(255, 255, 255, 0.85);
-    --bg-sidebar: rgba(255, 255, 255, 0.65);
+    --bg-surface: rgba(255, 255, 255, 0.6);
+    --bg-glass: rgba(255, 255, 255, 0.55);
+    --bg-sidebar: rgba(255, 255, 255, 0.45);
+    --bg-header: rgba(255, 255, 255, 0.55);
+    --bg-toolbar: rgba(0, 0, 0, 0.03);
     --border-glass: rgba(0, 0, 0, 0.08);
 
     --accent-primary: #048CBA;
@@ -151,10 +155,112 @@ h6,
 
 /* Glassmorphism Utilities */
 .glass-panel {
-  background: var(--bg-surface);
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
   border: 1px solid var(--border-glass);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transform: translateZ(0);
+}
+
+/* Glass header & footer */
+.glass-header,
+.glass-footer {
+  background: var(--bg-header);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  border-color: var(--border-glass);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Compact toolbar strip for mobile action buttons */
+.glass-toolbar {
+  background: var(--bg-toolbar);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.glass-toolbar .toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-toolbar .toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.glass-toolbar .toolbar-btn:active {
+  transform: scale(0.92);
+}
+
+.glass-toolbar .toolbar-btn.toolbar-btn-active {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: voiceGlow 1.5s ease-in-out infinite alternate;
+}
+
+.glass-toolbar .toolbar-btn.toolbar-btn-active .toolbar-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 12px;
+  border: 2px solid rgba(239, 68, 68, 0.4);
+  animation: voicePulseRing 1.2s ease-out infinite;
+  pointer-events: none;
+}
+
+.glass-toolbar .toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-glass);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+/* Glass error banner */
+.glass-error {
+  background: rgba(239, 68, 68, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #FCA5A5;
+  border-radius: 12px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.light .glass-error {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(220, 38, 38, 0.15);
+  color: #B91C1C;
+}
+
+.light .glass-toolbar {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.light .glass-toolbar .toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .glass-sidebar {
@@ -345,11 +451,13 @@ h6,
   will-change: transform;
 }
 
-/* AI Message Bubble - Performance Optimized */
+/* AI Message Bubble - Glass Morphism */
 .ai-bubble {
-  background: var(--bg-surface);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
   border: 1px solid var(--border-glass);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   will-change: transform;
@@ -800,7 +908,9 @@ h6,
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 50%;
-  background: var(--bg-surface);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border: 1px solid var(--border-glass);
   color: var(--text-primary);
   display: flex;
@@ -812,7 +922,7 @@ h6,
   pointer-events: none;
   transition: all 0.3s ease;
   z-index: 20;
-  box-shadow: var(--shadow-soft);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .scroll-fab-visible {
@@ -824,4 +934,266 @@ h6,
 .scroll-fab:hover {
   background: var(--btn-glass-hover);
   transform: translateY(-2px) scale(1);
+}
+
+/* ── Voice Input Button ─────────────────────────────── */
+.voice-btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.3s ease;
+}
+
+.voice-btn:hover {
+  color: var(--text-primary);
+}
+
+.voice-btn-recording {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #EF4444 !important;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.25), inset 0 0 12px rgba(239, 68, 68, 0.1);
+  animation: voiceGlow 1.5s ease-in-out infinite alternate;
+}
+
+.voice-btn-recording:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.35), inset 0 0 12px rgba(239, 68, 68, 0.15);
+}
+
+.voice-pulse {
+  position: absolute;
+  inset: -4px;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(239, 68, 68, 0.5);
+  animation: voicePulseRing 1.2s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes voicePulseRing {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes voiceGlow {
+  0% {
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.2), inset 0 0 8px rgba(239, 68, 68, 0.08);
+  }
+  100% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.35), inset 0 0 15px rgba(239, 68, 68, 0.15);
+  }
+}
+
+/* Light mode voice button */
+.light .voice-btn-recording {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.35);
+  color: #DC2626 !important;
+  box-shadow: 0 0 15px rgba(220, 38, 38, 0.15), inset 0 0 8px rgba(220, 38, 38, 0.06);
+}
+
+/* Light mode glass adjustments */
+.light .glass-header,
+.light .glass-footer {
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.light .ai-bubble {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.light .scroll-fab {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Mobile footer compact spacing */
+@media (max-width: 767px) {
+  .mobile-footer {
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  }
+  .mobile-footer .footer-inner {
+    gap: 6px;
+  }
+}
+
+/* ── Unified Input Bar ────────────────────────────── */
+.input-bar-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  background: var(--input-glass-bg);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1.5px solid var(--input-glass-border);
+  border-radius: 22px;
+  padding: 4px;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.input-bar-wrapper:focus-within {
+  border-color: var(--accent-primary);
+  background: var(--input-glass-focus);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.08), 0 0 15px var(--accent-glow), inset 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.input-bar-wrapper.input-bar-error {
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
+}
+
+.input-bar-wrapper.input-bar-recording {
+  border-color: rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.06), 0 0 20px rgba(239, 68, 68, 0.08);
+}
+
+/* Textarea inside bar — no borders, transparent bg */
+.input-bar-textarea {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 8px 4px 8px 6px;
+  min-height: 36px;
+  max-height: 160px;
+  /* Hide scrollbar */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.input-bar-textarea::-webkit-scrollbar {
+  display: none;
+}
+
+.input-bar-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+@media (min-width: 768px) {
+  .input-bar-textarea {
+    font-size: 0.9375rem;
+    padding: 10px 6px 10px 8px;
+    min-height: 40px;
+  }
+  .input-bar-wrapper {
+    border-radius: 24px;
+    padding: 5px;
+  }
+}
+
+/* Action buttons inside bar */
+.input-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.input-bar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  transform: scale(1.08);
+}
+
+.input-bar-btn:active {
+  transform: scale(0.92);
+}
+
+/* Recording state */
+.input-bar-btn.input-bar-btn-recording {
+  background: rgba(239, 68, 68, 0.12);
+  color: #EF4444;
+  animation: voiceGlow 1.5s ease-in-out infinite alternate;
+}
+
+.input-bar-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid rgba(239, 68, 68, 0.4);
+  animation: voicePulseRing 1.2s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Send button — circular gradient */
+.input-bar-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+.input-bar-send:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: 0 4px 18px var(--accent-glow);
+}
+
+.input-bar-send:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.input-bar-send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@media (min-width: 768px) {
+  .input-bar-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .input-bar-send {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+/* Light mode input bar */
+.light .input-bar-wrapper {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.light .input-bar-wrapper:focus-within {
+  box-shadow: 0 0 0 3px rgba(4, 140, 186, 0.1), 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.light .input-bar-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.light .input-bar-send {
+  box-shadow: 0 2px 10px rgba(4, 140, 186, 0.2);
 }
