@@ -2,7 +2,7 @@
 
 Short, friendly summary for LinkedIn: Alpha is a modern, mobile-first chat UI built with React + Vite that proxies requests through a lightweight Node/Express backend to an AI provider. Gemini is preferred (set `GEMINI_API_KEY` + `GEMINI_API_URL`), with OpenRouter available as a fallback. It stores conversation history in the browser (no database) and is designed for easy local development and simple cloud deployment (Vercel + Render).
 
-Live demo: https://alpha-f9hm.onrender.com/ (backend) • Frontend: (your Vercel URL)
+Live demo: https://alpha-f9hm.onrender.com/ (backend) • Frontend: https://alpha-tawny-two.vercel.app/
 
 **Highlights**
 - Human-like conversation behavior via a configurable system prompt
