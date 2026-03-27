@@ -1,0 +1,6 @@
+{
+  "appId": "com.alpha.chat",
+  "appName": "ALPHA",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

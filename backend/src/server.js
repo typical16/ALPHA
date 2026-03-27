@@ -24,6 +24,8 @@ app.use(helmet({ contentSecurityPolicy: false }));
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost',
+  'capacitor://localhost',
   origin
 ].filter(Boolean);
 
@@ -36,7 +38,7 @@ const corsOptions = {
       if (parsed.hostname?.endsWith('.vercel.app')) return callback(null, true);
       if (parsed.hostname?.endsWith('.onrender.com')) return callback(null, true);
     } catch (_) { /* ignore */ }
-    callback(new Error('Not allowed by CORS'));
+    callback(null, true); // Fallback: allow for mobile apps
   },
   credentials: false
 };
@@ -327,13 +329,10 @@ app.post('/api/chat/stream', chatLimiter, async (req, res) => {
 
 // ── SPA catch-all (production) ──────────────────────────
 if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-  app.get('*', (_req, res) => {
-    const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
-    res.sendFile(path.join(frontendDistPath, 'index.html'));
-  });
+  const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
+  app.use(express.static(frontendDistPath));
 }
 
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });
-
