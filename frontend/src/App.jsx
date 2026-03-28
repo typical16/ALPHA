@@ -19,25 +19,45 @@ function normalizeMathDelimiters(text) {
     .replace(/\\\]/g, '$$')
 }
 
-const LOCAL_STORAGE_KEY = 'openrouter_chat_history_v1'
+const LOCAL_STORAGE_SESSIONS = 'alpha_sessions_v1'
+const LOCAL_STORAGE_OLD = 'openrouter_chat_history_v1'
 const LOCAL_STORAGE_SETTINGS = 'openrouter_chat_settings_v1'
 const MAX_INPUT_CHARS = 4000
 
-function loadHistory() {
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 6)
+}
+
+function loadSessions() {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.map(m => ({ ...m, isTyping: false }))
+    const raw = localStorage.getItem(LOCAL_STORAGE_SESSIONS)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+    // Migrate old flat array format if exists
+    const oldRaw = localStorage.getItem(LOCAL_STORAGE_OLD)
+    if (oldRaw) {
+      const parsed = JSON.parse(oldRaw)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const migratedSession = {
+          id: generateId(),
+          title: parsed.find(m => m.role === 'user')?.content?.slice(0, 30) || 'Imported Chat',
+          updatedAt: Date.now(),
+          messages: parsed.map(m => ({ ...m, isTyping: false }))
+        }
+        return [migratedSession]
+      }
+    }
+    return []
   } catch {
     return []
   }
 }
 
-function saveHistory(history) {
+function saveSessions(sessions) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(history))
+    localStorage.setItem(LOCAL_STORAGE_SESSIONS, JSON.stringify(sessions))
   } catch { }
 }
 
@@ -448,7 +468,16 @@ const STARTER_PROMPTS = {
 
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
-  const [messages, setMessages] = useState(() => loadHistory())
+  const [{ initSessions, initId, initMsgs }] = useState(() => {
+    const s = loadSessions()
+    const id = s.length > 0 ? s[0].id : generateId()
+    const msgs = s.length > 0 ? (s[0].messages || []) : []
+    return { initSessions: s, initId: id, initMsgs: msgs }
+  })
+  
+  const [sessions, setSessions] = useState(initSessions)
+  const [currentSessionId, setCurrentSessionId] = useState(initId)
+  const [messages, setMessages] = useState(initMsgs)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -497,7 +526,39 @@ export default function App() {
     }
   }, [theme])
 
-  useEffect(() => { saveHistory(messages) }, [messages])
+  // Sync current messages to sessions array
+  useEffect(() => {
+    setSessions(prev => {
+      let isNew = true
+      let updated = prev.map(s => {
+        if (s.id === currentSessionId) {
+          isNew = false
+          return {
+            ...s,
+            messages,
+            updatedAt: Date.now(),
+            title: s.title === 'New Chat' || !s.title ? (messages.find(m => m.role === 'user')?.content?.slice(0, 30) || 'New Chat') : s.title
+          }
+        }
+        return s
+      })
+      
+      if (isNew && messages.length > 0) {
+        updated = [{
+          id: currentSessionId,
+          title: messages.find(m => m.role === 'user')?.content?.slice(0, 30) || 'New Chat',
+          updatedAt: Date.now(),
+          messages
+        }, ...prev]
+      }
+      return updated
+    })
+  }, [messages, currentSessionId])
+
+  // Persist sessions to disk
+  useEffect(() => {
+    saveSessions(sessions)
+  }, [sessions])
   useEffect(() => {
     try { localStorage.setItem(LOCAL_STORAGE_SETTINGS, JSON.stringify(settings)) } catch { }
   }, [settings])
@@ -838,9 +899,46 @@ export default function App() {
     }
   }
 
-  function clearHistory() { setMessages([]); setError('') }
+  function clearHistory() {
+    if (!window.confirm("Delete ALL chat history? This cannot be undone.")) return
+    setSessions([])
+    const newId = generateId()
+    setCurrentSessionId(newId)
+    setMessages([])
+    setError('')
+  }
+
+  function deleteSession(id) {
+    setSessions(prev => {
+      const updated = prev.filter(s => s.id !== id)
+      if (id === currentSessionId) {
+        if (updated.length > 0) {
+          setCurrentSessionId(updated[0].id)
+          setMessages(updated[0].messages)
+        } else {
+          setCurrentSessionId(generateId())
+          setMessages([])
+        }
+      }
+      return updated
+    })
+  }
+
+  function switchSession(id) {
+    if (loading) return
+    const s = sessions.find(x => x.id === id)
+    if (s) {
+      setCurrentSessionId(id)
+      setMessages(s.messages || [])
+      setShowSettings(false)
+      setTimeout(() => scrollToBottom('auto'), 50)
+    }
+  }
 
   function newChat() {
+    if (messages.length === 0) return // Already in a new chat
+    const newId = generateId()
+    setCurrentSessionId(newId)
     setMessages([])
     setInput('')
     setError('')
@@ -917,6 +1015,50 @@ export default function App() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-6 nice-scrollbar">
+              {/* Chat History */}
+              <div className="space-y-3 mb-6 px-1">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-[#00F0FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span className="text-xs font-bold text-stone-300 uppercase tracking-wider">History</span>
+                  </div>
+                  <button onClick={newChat} title="New Chat" className="flex items-center justify-center w-6 h-6 rounded-full bg-white/5 hover:bg-[#00F0FF]/20 text-[#00F0FF] hover:text-white transition-all shadow-sm hover:shadow-[0_0_10px_rgba(0,240,255,0.3)] group">
+                    <svg className="w-3.5 h-3.5 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                  </button>
+                </div>
+                {sessions.length === 0 ? (
+                  <div className="text-xs text-stone-500 italic bg-black/20 rounded-lg p-3 border border-white/5 flex items-center justify-center">No previous chats</div>
+                ) : (
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 nice-scrollbar">
+                    {sessions.map(s => {
+                      const isActive = currentSessionId === s.id;
+                      return (
+                        <div 
+                          key={s.id} 
+                          onClick={() => switchSession(s.id)} 
+                          className={`group relative flex items-center justify-between rounded-xl px-3 py-2.5 cursor-pointer text-sm transition-all duration-300 border ${isActive ? 'bg-gradient-to-r from-[#00F0FF]/10 to-[#7000FF]/10 border-[#00F0FF]/30 shadow-[0_4px_15px_rgba(0,0,0,0.2)]' : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-white/5 hover:translate-x-1'}`}
+                        >
+                          {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-3/5 bg-gradient-to-b from-[#00F0FF] to-[#7000FF] rounded-r-full shadow-glow"></div>}
+                          
+                          <div className={`truncate pr-2 select-none flex items-center gap-2.5 ${isActive ? 'text-white font-medium' : 'text-stone-400 group-hover:text-stone-200'}`}>
+                            <svg className={`w-3.5 h-3.5 shrink-0 transition-opacity ${isActive ? 'text-[#00F0FF] opacity-100' : 'opacity-40'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                            <span className="truncate">{s.title || 'New Chat'}</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                            className={`flex items-center justify-center w-7 h-7 rounded-md transition-all ${isActive ? 'text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 opacity-60 hover:opacity-100' : 'text-stone-500 hover:bg-rose-500/20 hover:text-rose-400 opacity-0 group-hover:opacity-100'} shrink-0`}
+                            title="Delete Chat"
+                            aria-label="Delete Chat"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Theme Toggle */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-stone-600 uppercase tracking-wide">
@@ -992,11 +1134,11 @@ export default function App() {
 
               <div className="pt-2 border-t border-stone-200">
                 <button
-                  aria-label="Clear conversation history"
+                  aria-label="Clear all history"
                   className="w-full rounded-xl px-3 py-2.5 text-sm font-medium glass-button text-rose-400 hover:text-rose-300 shadow-sm transition-colors"
                   onClick={clearHistory}
                 >
-                  🗑️ Clear conversation
+                  🗑️ Clear all history
                 </button>
               </div>
             </div>
