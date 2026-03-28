@@ -578,24 +578,26 @@ export default function App() {
     const recognition = new SpeechRecognition()
     recognition.continuous = true
     recognition.interimResults = true
-    recognition.lang = 'en-US'
+    // Use the user's system language for much better recognition accuracy
+    recognition.lang = window.navigator.language || 'en-US'
 
-    let finalTranscript = ''
+    // Capture the existing input right before we start listening
+    const currentInput = inputRef.current?.value || ''
+    const baseInput = currentInput.endsWith(' ') || currentInput === '' ? currentInput : currentInput + ' '
 
     recognition.onresult = (event) => {
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      let sessionTranscript = ''
+      // Rebuild the entire transcript from 0 to avoid word repetition bugs in continuous mode
+      for (let i = 0; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript
         if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' '
-          setInput(prev => {
-            const newVal = prev + transcript + ' '
-            return newVal.slice(0, MAX_INPUT_CHARS)
-          })
+          sessionTranscript += transcript + ' '
         } else {
-          interim = transcript
+          sessionTranscript += transcript
         }
       }
+      // Update state with base input + live transcript (including interims so user sees live "guessing")
+      setInput((baseInput + sessionTranscript).slice(0, MAX_INPUT_CHARS))
     }
 
     recognition.onerror = (event) => {
