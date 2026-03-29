@@ -373,10 +373,10 @@ const MessageBubble = memo(function MessageBubble({ role, content, time, image, 
           </div>
         )}
         <div className={
-          'rounded-2xl px-3.5 py-2.5 md:px-5 md:py-4 relative group min-w-0 overflow-hidden leading-relaxed ' +
+          'px-4 py-3.5 md:px-5 md:py-4 relative group min-w-0 overflow-hidden leading-relaxed ' +
           (isUser
-            ? 'user-bubble'
-            : 'ai-bubble glass-panel')
+            ? 'user-bubble rounded-[22px] rounded-tr-[4px] md:rounded-tr-[6px]'
+            : 'ai-bubble glass-panel rounded-[22px] rounded-tl-[4px] md:rounded-tl-[6px]')
         }>
           {image && (
             <div className="mb-3 rounded-xl overflow-hidden max-w-sm border border-white/20">
@@ -430,7 +430,7 @@ function ThinkingBubble() {
         <div className="avatar-pop flex h-7 w-7 md:h-9 md:w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#00F0FF] to-[#7000FF] text-white shrink-0 text-[10px] md:text-xs font-bold shadow-glow">
           AI
         </div>
-        <div className="ai-bubble glass-panel max-w-[85%] rounded-2xl px-3.5 py-2.5 md:px-5 md:py-4">
+        <div className="ai-bubble glass-panel max-w-[85%] rounded-[22px] rounded-tl-[4px] md:rounded-tl-[6px] px-4 py-3.5 md:px-5 md:py-4">
           <div className="alpha-processing" aria-label="Alpha is thinking">
             <div className="alpha-core-container">
               <div className="alpha-orbit-2" />
@@ -577,9 +577,17 @@ export default function App() {
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    let ticking = false
     const handleScroll = () => {
-      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      setShowScrollFAB(distFromBottom > 200)
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          if (!el) return
+          const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+          setShowScrollFAB(distFromBottom > 200)
+          ticking = false
+        })
+        ticking = true
+      }
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
@@ -1002,16 +1010,19 @@ export default function App() {
           {/* ── Sidebar ── */}
           <aside
             aria-label="Settings panel"
-            className={`glass-sidebar absolute md:relative h-full w-[80%] max-w-sm md:w-80 md:flex-shrink-0 overflow-hidden flex flex-col z-30 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${showSettings ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+            className={`glass-sidebar absolute md:relative h-full w-[85%] max-w-sm md:w-80 md:flex-shrink-0 overflow-hidden flex flex-col z-40 transition-transform duration-[400ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${showSettings ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
           >
-            <div className="h-14 flex items-center justify-between px-5 border-b border-[var(--border-glass)] flex-shrink-0">
-              <div className="font-semibold text-white tracking-tight">⚙️ Settings</div>
+            <div className={`h-20 flex items-center justify-between px-6 border-b flex-shrink-0 transition-colors ${theme === 'dark' ? 'border-white/5 bg-black/20' : 'border-black/5 bg-black/5'}`}>
+              <div className={`font-bold tracking-widest uppercase text-xs flex items-center gap-3 ${theme === 'dark' ? 'text-white' : 'text-stone-800'}`}>
+                 <div className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 shadow-[0_0_10px_rgba(0,240,255,0.6)] animate-pulse"></div>
+                 System Core
+              </div>
               <button
                 aria-label="Close settings"
-                className="md:hidden text-stone-500 hover:text-stone-800 text-sm px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors"
+                className={`md:hidden flex items-center justify-center w-8 h-8 rounded-full border transition-all active:scale-90 ${theme === 'dark' ? 'border-white/10 bg-white/5 text-stone-300 hover:text-white hover:bg-white/10' : 'border-black/10 bg-black/5 text-stone-500 hover:text-black hover:bg-black/10'}`}
                 onClick={() => { setShowSettings(false); triggerHaptic(5); }}
               >
-                Close
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-6 nice-scrollbar">
@@ -1019,15 +1030,15 @@ export default function App() {
               <div className="space-y-3 mb-6 px-1">
                 <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-[#00F0FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span className="text-xs font-bold text-stone-300 uppercase tracking-wider">History</span>
+                    <svg className={`w-4 h-4 ${theme === 'dark' ? 'text-[#00F0FF]' : 'text-[#048CBA]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span className={`text-xs font-bold uppercase tracking-wider ${theme === 'dark' ? 'text-stone-300' : 'text-stone-600'}`}>History</span>
                   </div>
-                  <button onClick={newChat} title="New Chat" className="flex items-center justify-center w-6 h-6 rounded-full bg-white/5 hover:bg-[#00F0FF]/20 text-[#00F0FF] hover:text-white transition-all shadow-sm hover:shadow-[0_0_10px_rgba(0,240,255,0.3)] group">
+                  <button onClick={newChat} title="New Chat" className={`flex items-center justify-center w-6 h-6 rounded-full transition-all shadow-sm group ${theme === 'dark' ? 'bg-white/5 hover:bg-[#00F0FF]/20 text-[#00F0FF] hover:text-white hover:shadow-[0_0_10px_rgba(0,240,255,0.3)]' : 'bg-black/5 hover:bg-[#048CBA]/20 text-[#048CBA] hover:text-black hover:shadow-[0_0_10px_rgba(4,140,186,0.3)]'}`}>
                     <svg className="w-3.5 h-3.5 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
                   </button>
                 </div>
                 {sessions.length === 0 ? (
-                  <div className="text-xs text-stone-500 italic bg-black/20 rounded-lg p-3 border border-white/5 flex items-center justify-center">No previous chats</div>
+                  <div className={`text-xs italic rounded-lg p-3 border flex items-center justify-center ${theme === 'dark' ? 'text-stone-500 bg-black/20 border-white/5' : 'text-stone-500 bg-black/5 border-black/5'}`}>No previous chats</div>
                 ) : (
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 nice-scrollbar">
                     {sessions.map(s => {
@@ -1036,12 +1047,12 @@ export default function App() {
                         <div 
                           key={s.id} 
                           onClick={() => switchSession(s.id)} 
-                          className={`group relative flex items-center justify-between rounded-xl px-3 py-2.5 cursor-pointer text-sm transition-all duration-300 border ${isActive ? 'bg-gradient-to-r from-[#00F0FF]/10 to-[#7000FF]/10 border-[#00F0FF]/30 shadow-[0_4px_15px_rgba(0,0,0,0.2)]' : 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-white/5 hover:translate-x-1'}`}
+                          className={`group relative flex items-center justify-between rounded-xl px-3 py-2.5 cursor-pointer text-sm transition-all duration-300 border ${isActive ? (theme === 'dark' ? 'bg-gradient-to-r from-[#00F0FF]/10 to-[#7000FF]/10 border-[#00F0FF]/30 shadow-[0_4px_15px_rgba(0,0,0,0.2)]' : 'bg-gradient-to-r from-[#048CBA]/10 to-[#6B21A8]/10 border-[#048CBA]/30 shadow-[0_4px_15px_rgba(0,0,0,0.05)]') : (theme === 'dark' ? 'bg-black/20 border-white/5 hover:border-white/10 hover:bg-white/5 hover:translate-x-1' : 'bg-black/5 border-black/5 hover:border-black/10 hover:bg-black/10 hover:translate-x-1')}`}
                         >
-                          {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-3/5 bg-gradient-to-b from-[#00F0FF] to-[#7000FF] rounded-r-full shadow-glow"></div>}
+                          {isActive && <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-3/5 rounded-r-full shadow-glow ${theme === 'dark' ? 'bg-gradient-to-b from-[#00F0FF] to-[#7000FF]' : 'bg-gradient-to-b from-[#048CBA] to-[#6B21A8]'}`}></div>}
                           
-                          <div className={`truncate pr-2 select-none flex items-center gap-2.5 ${isActive ? 'text-white font-medium' : 'text-stone-400 group-hover:text-stone-200'}`}>
-                            <svg className={`w-3.5 h-3.5 shrink-0 transition-opacity ${isActive ? 'text-[#00F0FF] opacity-100' : 'opacity-40'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                          <div className={`truncate pr-2 select-none flex items-center gap-2.5 ${isActive ? (theme === 'dark' ? 'text-white font-medium' : 'text-stone-900 font-medium') : (theme === 'dark' ? 'text-stone-400 group-hover:text-stone-200' : 'text-stone-500 group-hover:text-stone-800')}`}>
+                            <svg className={`w-3.5 h-3.5 shrink-0 transition-opacity ${isActive ? (theme === 'dark' ? 'text-[#00F0FF] opacity-100' : 'text-[#048CBA] opacity-100') : 'opacity-40'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                             <span className="truncate">{s.title || 'New Chat'}</span>
                           </div>
                           <button
@@ -1059,44 +1070,53 @@ export default function App() {
                 )}
               </div>
 
-              {/* Theme Toggle */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-stone-600 uppercase tracking-wide">
-                  Theme
+              {/* Theme Toggle Premium Segmented Control */}
+              <div className="space-y-2.5">
+                <label className="text-[10px] font-bold text-stone-500 uppercase tracking-[0.15em] ml-1">
+                  Interface Theme
                 </label>
-                <div className="flex bg-black/20 rounded-lg p-1">
+                <div className={`relative flex p-1 rounded-xl border shadow-inner ${theme === 'dark' ? 'bg-black/30 border-white/5' : 'bg-black/5 border-black/5 shadow-none'}`}>
+                  <div
+                    className={`absolute inset-y-1 w-[calc(50%-4px)] rounded-lg transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${theme === 'dark' ? 'bg-gradient-to-b from-white/15 to-white/5 border border-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.5)] translate-x-0' : 'bg-white border border-black/5 shadow-[0_4px_12px_rgba(0,0,0,0.1)] translate-x-[calc(100%+8px)]'}`}
+                  ></div>
                   <button
                     onClick={() => setTheme('dark')}
-                    className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all ${theme === 'dark' ? 'bg-white/20 text-white shadow-sm' : 'text-stone-400 hover:text-stone-200'}`}
+                    className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg transition-colors duration-300 ${theme === 'dark' ? 'text-white drop-shadow-md' : 'text-stone-500 hover:text-stone-700'}`}
                   >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
                     Dark
                   </button>
                   <button
                     onClick={() => setTheme('light')}
-                    className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all ${theme === 'light' ? 'bg-white/90 text-black shadow-sm' : 'text-stone-400 hover:text-stone-200'}`}
+                    className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg transition-colors duration-300 ${theme === 'light' ? 'text-stone-800 drop-shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
                   >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                     Light
                   </button>
                 </div>
               </div>
 
-              {/* Temperature */}
-              <div className="space-y-2">
-                <label htmlFor="temp-range" className="text-xs font-semibold text-stone-600 uppercase tracking-wide">
-                  Temperature <span className="font-bold text-sage-700">{settings.temperature.toFixed(2)}</span>
+              {/* Temperature Premium Slider */}
+              <div className="space-y-2.5">
+                <label htmlFor="temp-range" className="flex items-center justify-between text-[10px] font-bold text-stone-500 uppercase tracking-[0.15em] ml-1">
+                  <span>Temperature</span>
+                  <span className="text-cyan-400 font-mono text-[11px] drop-shadow-[0_0_5px_rgba(0,240,255,0.5)]">{settings.temperature.toFixed(2)}</span>
                 </label>
-                <input
-                  id="temp-range"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={settings.temperature}
-                  onChange={(e) => setSettings(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
-                  className="w-full accent-amber-600 h-1.5"
-                  aria-label="Temperature control"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400">
+                <div className="relative flex items-center py-2 group">
+                  <input
+                    id="temp-range"
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={settings.temperature}
+                    onChange={(e) => setSettings(s => ({ ...s, temperature: parseFloat(e.target.value) }))}
+                    className="premium-slider w-full"
+                    aria-label="Temperature control"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#00F0FF]/10 to-[#7000FF]/10 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                </div>
+                <div className="flex justify-between text-[10px] text-stone-500 font-medium px-1">
                   <span>Precise</span>
                   <span>Creative</span>
                 </div>
@@ -1104,38 +1124,38 @@ export default function App() {
 
               {/* Status */}
               <div className="space-y-1.5">
-                <div className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Backend Status</div>
+                <div className={`text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-stone-400' : 'text-stone-500'}`}>Backend Status</div>
                 <div className="flex items-center gap-2 text-sm">
-                  <span className={`w-2 h-2 rounded-full ${healthDot} animate-pulse`} />
-                  <span className="text-stone-600">
+                  <span className={`w-2 h-2 rounded-full ${healthDot} animate-pulse shadow-sm`} />
+                  <span className={theme === 'dark' ? 'text-stone-300' : 'text-stone-600'}>
                     {healthy === true ? 'Connected' : healthy === false ? 'Disconnected' : 'Checking…'}
                   </span>
                 </div>
               </div>
 
               {/* Keyboard shortcuts */}
-              <div className="space-y-1.5">
-                <div className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Keyboard Shortcuts</div>
-                <div className="space-y-1.5 text-xs text-stone-500">
+              <div className="space-y-2">
+                <div className={`text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-stone-400' : 'text-stone-500'}`}>Keyboard Shortcuts</div>
+                <div className={`space-y-1.5 text-xs ${theme === 'dark' ? 'text-stone-500' : 'text-stone-600'}`}>
                   <div className="flex justify-between items-center">
                     <span>Send message</span>
-                    <kbd className="kbd-tag">Enter</kbd>
+                    <kbd className={`kbd-tag ${theme === 'dark' ? 'bg-white/5 border-white/10 text-stone-300' : 'bg-black/5 border-black/10 text-stone-600'}`}>Enter</kbd>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>New line</span>
-                    <kbd className="kbd-tag">Shift + Enter</kbd>
+                    <kbd className={`kbd-tag ${theme === 'dark' ? 'bg-white/5 border-white/10 text-stone-300' : 'bg-black/5 border-black/10 text-stone-600'}`}>Shift + Enter</kbd>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>New chat</span>
-                    <kbd className="kbd-tag">Ctrl + K</kbd>
+                    <kbd className={`kbd-tag ${theme === 'dark' ? 'bg-white/5 border-white/10 text-stone-300' : 'bg-black/5 border-black/10 text-stone-600'}`}>Ctrl + K</kbd>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-stone-200">
+              <div className={`pt-2 border-t ${theme === 'dark' ? 'border-white/5' : 'border-black/5'}`}>
                 <button
                   aria-label="Clear all history"
-                  className="w-full rounded-xl px-3 py-2.5 text-sm font-medium glass-button text-rose-400 hover:text-rose-300 shadow-sm transition-colors"
+                  className={`w-full rounded-xl px-3 py-2.5 text-sm font-medium transition-colors border ${theme === 'dark' ? 'bg-black/20 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border-white/5' : 'bg-black/5 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 border-black/5'}`}
                   onClick={clearHistory}
                 >
                   🗑️ Clear all history
@@ -1146,52 +1166,60 @@ export default function App() {
 
           {/* ── Main column ── */}
           <div className="flex-1 flex flex-col min-w-0 h-full relative">
-            {/* Header */}
-            <header className="px-4 h-14 border-b border-[var(--border-glass)] glass-header flex items-center justify-between flex-shrink-0 z-10 relative">
-              <div className="flex items-center gap-3">
-                <button
-                  aria-label="Open settings"
-                  className="md:hidden rounded-xl border px-3 py-1.5 text-sm font-medium glass-button text-white transition-colors"
-                  onClick={() => { setShowSettings(true); triggerHaptic(5); }}
-                >
-                  ⚙️
-                </button>
-                <h1 className="text-lg md:text-xl font-bold tracking-tight flex items-center gap-2 drop-shadow-[0_2px_10px_rgba(0,240,255,0.3)]">
-                  <span className="alpha-gradient-text contrast-125">
-                    Alpha
-                  </span>
+            {/* Floating Glass Crown Navbar */}
+            <div className="absolute top-4 md:top-6 left-0 right-0 px-3 md:px-6 z-20 pointer-events-none flex justify-center">
+              <header className="glass-header pointer-events-auto h-14 w-full max-w-4xl rounded-[24px] border border-[var(--border-glass)] flex items-center justify-between px-4 md:px-5 shadow-[0_12px_30px_rgba(0,0,0,0.5),_inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all duration-300">
+                <div className="flex items-center gap-3 md:gap-4">
+                  <button
+                    aria-label="Open settings"
+                    className="md:hidden flex items-center justify-center w-9 h-9 rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:shadow-glow transition-all active:scale-95"
+                    onClick={() => { setShowSettings(true); triggerHaptic(5); }}
+                  >
+                    <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+                  </button>
+                  <div className="flex items-center gap-2.5 drop-shadow-[0_2px_10px_rgba(0,240,255,0.3)]">
+                    <div className="relative flex items-center justify-center w-5 h-5">
+                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#00F0FF] to-[#7000FF] animate-[orbitSpinReverse_4s_linear_infinite]" />
+                      <div className="absolute w-3 h-3 rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]" />
+                    </div>
+                    <h1 className="text-xl md:text-2xl font-bold tracking-tight alpha-gradient-text contrast-125 mb-0.5">
+                      Alpha
+                    </h1>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
                   <span
                     aria-label={healthy === true ? 'Backend online' : healthy === false ? 'Backend offline' : 'Checking connection'}
-                    className={`inline-block w-2 h-2 rounded-full ${healthDot} animate-pulse`}
+                    className={`hidden md:inline-block w-2.5 h-2.5 rounded-full ${healthDot} animate-pulse shadow-[0_0_8px_currentColor] mr-2`}
                   />
-                </h1>
-              </div>
-              <div className="flex items-center gap-2">
-                {loading ? (
-                  <button
-                    onClick={stopRequest}
-                    aria-label="Stop generating"
-                    className="rounded-xl px-3 py-1.5 text-sm font-medium glass-button text-rose-400 hover:text-rose-300 transition-colors"
-                  >
-                    ⬛ Stop
-                  </button>
-                ) : (
-                  <button
-                    onClick={newChat}
-                    aria-label="Start new chat"
-                    className="rounded-xl px-3 py-1.5 text-sm font-medium glass-button text-white transition-colors"
-                  >
-                    ✏️ New chat
-                  </button>
-                )}
-              </div>
-            </header>
+                  {loading ? (
+                    <button
+                      onClick={stopRequest}
+                      aria-label="Stop generating"
+                      className="group flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition-all shadow-glow active:scale-95"
+                    >
+                      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                      <span className="hidden sm:inline">Stop</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={newChat}
+                      aria-label="Start new chat"
+                      className="group flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all active:scale-95"
+                    >
+                      <svg className="w-4 h-4 transition-transform group-hover:rotate-90 group-hover:text-[#00F0FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                      <span className="hidden sm:inline">New chat</span>
+                    </button>
+                  )}
+                </div>
+              </header>
+            </div>
 
-            {/* Messages */}
+            {/* Messages Area */}
             <main className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
               <div
                 ref={containerRef}
-                className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-6 py-4 md:py-6 space-y-4 nice-scrollbar"
+                className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-6 pt-24 pb-28 md:pt-28 md:pb-36 space-y-4 nice-scrollbar"
                 aria-label="Chat messages"
                 aria-live="polite"
               >
@@ -1221,7 +1249,7 @@ export default function App() {
                               inputRef.current?.focus()
                             }
                           }}
-                          className="stagger-enter flex items-start gap-3 p-3.5 rounded-2xl glass-button text-left transition-all cursor-pointer active:scale-[0.98] group"
+                          className="stagger-enter starter-card flex items-start gap-3 p-3.5 rounded-2xl glass-button text-left cursor-pointer group"
                           style={{ animationDelay: `${i * 100}ms` }}
                         >
                           <span className="text-xl group-hover:scale-110 transition-transform">{icon}</span>
@@ -1301,11 +1329,15 @@ export default function App() {
               />
             </main>
 
-            {/* Footer / Input area */}
-            <footer
-              aria-label="Message input"
-              className="border-t border-[var(--border-glass)] glass-footer px-3 md:px-6 py-2 md:py-3 flex-shrink-0 safe-area-bottom space-y-1.5 z-10"
+            {/* Floating Pill Footer / Input area */}
+            <div 
+              className="absolute bottom-4 md:bottom-6 left-0 right-0 px-3 md:px-6 z-20 pointer-events-none flex justify-center"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
             >
+              <footer
+                aria-label="Message input"
+                className="floating-pill-footer w-full max-w-4xl glass-footer p-2 md:p-2.5 rounded-[2rem] border border-[var(--border-glass)] space-y-1.5 shadow-2xl pointer-events-auto transition-all duration-300 focus-within:shadow-[0_20px_40px_rgba(0,0,0,0.4),_0_0_20px_var(--accent-glow)] focus-within:-translate-y-1"
+              >
               {/* Image preview */}
               {attachedImage && (
                 <div className="relative inline-block">
@@ -1414,6 +1446,7 @@ export default function App() {
                 </div>
               </div>
             </footer>
+            </div>
           </div>
         </div>
       </div>
