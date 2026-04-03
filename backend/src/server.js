@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
+import compression from 'compression';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,15 +43,33 @@ const corsOptions = {
   credentials: false
 };
 
-app.use(morgan('dev'));
+// ── Logging: production-appropriate format ──────────────
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+app.use(morgan(isProduction ? 'combined' : 'dev', {
+  // Skip health check pings in production to reduce log noise
+  skip: (req) => isProduction && req.path === '/health'
+}));
+
 app.use(cors(corsOptions));
+app.use(compression());
 app.use(express.json({ limit: '3mb' }));
 app.use(express.urlencoded({ limit: '3mb' }));
 
 // ── Rate limiting ───────────────────────────────────────
+// Global limiter: 200 req/min per IP (covers all routes)
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again shortly.' }
+});
+app.use(globalLimiter);
+
+// Tighter chat-specific limiter: 20 req/min per IP
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down and try again shortly.' }
@@ -66,14 +84,22 @@ if (!openRouterKey) {
   console.log('[INFO] OPENROUTER_API_KEY is present.');
 }
 
-// ── Static files (production) ───────────────────────────
-if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+// ── Static files (production) with ETag + caching ──────
+if (isProduction) {
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
-  app.use(express.static(frontendDistPath));
+  app.use(express.static(frontendDistPath, {
+    etag: true,
+    maxAge: '1d',
+    immutable: true,
+    lastModified: true
+  }));
 }
 
 // ── Routes ──────────────────────────────────────────────
 app.get('/health', (_req, res) => {
+  // Cache health response to reduce load from many polling clients
+  res.set('Cache-Control', 'public, max-age=5');
+  res.set('Connection', 'keep-alive');
   res.json({ ok: true, service: 'alpha-api', time: new Date().toISOString() });
 });
 
@@ -199,17 +225,24 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
 
     console.log(`[Chat] model=${selectedModel} msgs=${finalMessages.length} hasImages=${hasImages}`);
 
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', payload, {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${openRouterKey}`,
         'HTTP-Referer': process.env.HTTP_REFERER || 'http://localhost:5173',
         'X-Title': process.env.APP_TITLE || 'Alpha',
       },
-      timeout: 60_000
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60_000)
     });
 
-    const data = response.data;
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw { response: { status: response.status, data: { error: errData.error || `Request failed with status ${response.status}` } } };
+    }
+
+    const data = await response.json();
     const content = data?.choices?.[0]?.message?.content ?? '';
     const role = data?.choices?.[0]?.message?.role ?? 'assistant';
 
@@ -221,8 +254,16 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   }
 });
 
-// ── Streaming Chat endpoint (SSE) ──────────────────────
+// ── Streaming Chat endpoint (SSE) — uses native fetch for true streaming ──
 app.post('/api/chat/stream', chatLimiter, async (req, res) => {
+  // Route-level safety timeout (90s)
+  res.setTimeout(90_000, () => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ error: 'Request timed out' })}\n\n`);
+      res.end();
+    }
+  });
+
   try {
     if (!openRouterKey) {
       return res.status(500).json({ error: 'Server not configured: missing OPENROUTER_API_KEY' });
@@ -264,59 +305,73 @@ app.post('/api/chat/stream', chatLimiter, async (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    const orRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', payload, {
+    // Use native fetch for true streaming (no axios buffering)
+    const abortController = new AbortController();
+    req.on('close', () => abortController.abort());
+
+    const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${openRouterKey}`,
         'HTTP-Referer': process.env.HTTP_REFERER || 'http://localhost:5173',
         'X-Title': process.env.APP_TITLE || 'Alpha',
       },
-      responseType: 'stream',
-      timeout: 120_000,
+      body: JSON.stringify(payload),
+      signal: abortController.signal,
     });
 
-    let buffer = '';
-    orRes.data.on('data', (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line in buffer
+    if (!orRes.ok) {
+      const errData = await orRes.json().catch(() => ({}));
+      throw { response: { status: orRes.status, data: { error: errData.error || `Upstream error ${orRes.status}` } } };
+    }
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') {
-          if (trimmed === 'data: [DONE]') {
-            res.write('data: [DONE]\n\n');
-          }
-          continue;
-        }
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const json = JSON.parse(trimmed.slice(6));
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (typeof delta === 'string' && delta.length > 0) {
-              res.write(`data: ${JSON.stringify({ token: delta })}\n\n`);
+    // Stream the response body through to the client
+    const reader = orRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') {
+            if (trimmed === 'data: [DONE]') {
+              res.write('data: [DONE]\n\n');
             }
-          } catch (_) { /* skip malformed JSON */ }
+            continue;
+          }
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const json = JSON.parse(trimmed.slice(6));
+              const delta = json?.choices?.[0]?.delta?.content;
+              if (typeof delta === 'string' && delta.length > 0) {
+                res.write(`data: ${JSON.stringify({ token: delta })}\n\n`);
+              }
+            } catch (_) { /* skip malformed JSON */ }
+          }
         }
       }
-    });
+    } finally {
+      reader.releaseLock();
+    }
 
-    orRes.data.on('end', () => {
-      res.write('data: [DONE]\n\n');
-      res.end();
-    });
-
-    orRes.data.on('error', (err) => {
-      console.error('[Stream error]', err.message);
-      res.write(`data: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`);
-      res.end();
-    });
-
-    req.on('close', () => {
-      orRes.data.destroy();
-    });
+    res.write('data: [DONE]\n\n');
+    res.end();
 
   } catch (err) {
+    if (err?.name === 'AbortError') {
+      // Client disconnected, nothing to do
+      if (!res.writableEnded) res.end();
+      return;
+    }
     const { statusCode, message } = buildClientError(err);
     console.error('[Stream Error]', message, err?.response?.status || err?.code || '');
     if (!res.headersSent) {
@@ -328,9 +383,12 @@ app.post('/api/chat/stream', chatLimiter, async (req, res) => {
 });
 
 // ── SPA catch-all (production) ──────────────────────────
-if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+if (isProduction) {
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
-  app.use(express.static(frontendDistPath));
+  // SPA catch-all: serve index.html for any unmatched route
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
 }
 
 app.listen(port, () => {
