@@ -675,12 +675,19 @@ export default function App() {
     return () => { mounted = false; clearInterval(t) }
   }, [])
 
-  // Auto-resize textarea
+  // Auto-resize textarea - Optimized to prevent synchronous UI layout thrashing
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto'
-      inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px'
-    }
+    if (!inputRef.current) return
+    const el = inputRef.current
+    let scheduled = false
+    const rAF = requestAnimationFrame(() => {
+      if (!scheduled) {
+        scheduled = true
+        el.style.height = 'auto'
+        el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+      }
+    })
+    return () => cancelAnimationFrame(rAF)
   }, [input])
 
   // Auto-focus on load (skip when intro is showing)
@@ -1024,16 +1031,16 @@ export default function App() {
     }
   }
 
-  function clearHistory() {
+  const clearHistory = useCallback(() => {
     if (!window.confirm("Delete ALL chat history? This cannot be undone.")) return
     setSessions([])
     const newId = generateId()
     setCurrentSessionId(newId)
     setMessages([])
     setError('')
-  }
+  }, [])
 
-  function deleteSession(id) {
+  const deleteSession = useCallback((id) => {
     setSessions(prev => {
       const updated = prev.filter(s => s.id !== id)
       if (id === currentSessionId) {
@@ -1047,9 +1054,9 @@ export default function App() {
       }
       return updated
     })
-  }
+  }, [currentSessionId])
 
-  function switchSession(id) {
+  const switchSession = useCallback((id) => {
     if (loading) return
     const s = sessions.find(x => x.id === id)
     if (s) {
@@ -1058,9 +1065,9 @@ export default function App() {
       setShowSettings(false)
       setTimeout(() => scrollToBottom('auto'), 50)
     }
-  }
+  }, [loading, sessions, scrollToBottom])
 
-  function newChat() {
+  const newChat = useCallback(() => {
     if (messages.length === 0) return // Already in a new chat
     const newId = generateId()
     setCurrentSessionId(newId)
@@ -1071,17 +1078,17 @@ export default function App() {
     setCompressingImage(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
     setTimeout(() => inputRef.current?.focus(), 50)
-  }
+  }, [messages.length])
 
-  function closeIntro() {
+  const closeIntro = useCallback(() => {
     setShowIntro(false)
     localStorage.setItem('alpha_has_seen_intro', 'true')
     setTimeout(() => inputRef.current?.focus(), 150)
-  }
+  }, [])
 
-  function stopRequest() {
+  const stopRequest = useCallback(() => {
     try { abortRef.current?.abort() } catch { }
-  }
+  }, [])
 
   const healthDot =
     healthy === false ? 'bg-rose-500' :
@@ -1126,6 +1133,7 @@ export default function App() {
           />
 
           {/* ── Sidebar ── */}
+          {useMemo(() => (
           <aside
             aria-label="Settings panel"
             className={`glass-sidebar absolute md:relative h-full w-[85%] max-w-sm md:w-80 md:flex-shrink-0 overflow-hidden flex flex-col z-40 transition-transform duration-[400ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${showSettings ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
@@ -1311,10 +1319,12 @@ export default function App() {
               </div>
             </div>
           </aside>
+          ), [showSettings, theme, sidebarSearch, healthy, filteredSessions, settings.temperature, currentSessionId, newChat, deleteSession, switchSession, clearHistory])}
 
           {/* ── Main column ── */}
           <div className="flex-1 flex flex-col min-w-0 h-full relative">
             {/* Floating Glass Crown Navbar */}
+            {useMemo(() => (
             <div className="absolute top-4 md:top-6 left-0 right-0 px-3 md:px-6 z-20 pointer-events-none flex justify-center">
               <header className="glass-header pointer-events-auto h-14 w-full max-w-4xl rounded-[24px] border border-[var(--border-glass)] flex items-center justify-between px-4 md:px-5 shadow-[0_12px_30px_rgba(0,0,0,0.5),_inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all duration-300">
                 <div className="flex items-center gap-3 md:gap-4">
@@ -1362,6 +1372,7 @@ export default function App() {
                 </div>
               </header>
             </div>
+            ), [healthy, loading, newChat, stopRequest])}
 
             {/* Messages Area */}
             <main className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
@@ -1372,7 +1383,7 @@ export default function App() {
                 aria-live="polite"
               >
                 {/* Empty state */}
-                {messages.length === 0 && (
+                {useMemo(() => messages.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-6 drop-shadow-xl z-10 relative">
                     <div className="relative">
                       <div className="hero-glow" aria-hidden />
@@ -1420,7 +1431,7 @@ export default function App() {
                     </div>
                     <p className="hero-subtitle text-sm text-stone-400" style={{ animationDelay: '500ms' }}>Click a card or type a message · drag an image to attach</p>
                   </div>
-                )}
+                ), [messages.length])}
 
                 {/* Messages */}
                 {messages.map((m, idx) => (
